@@ -2,7 +2,9 @@
 #   docker compose up -d      -> Postgres on localhost:5432 and a self-hosted SuperTokens core on localhost:3567
 #   docker compose up -d db   -> only Postgres (use with SUPERTOKENS_CONNECTION_URI=https://try.supertokens.com)
 # The frontend and backend run on your machine with npm (see README.md).
-# Images can be overridden, e.g. POSTGRES_IMAGE=postgres:16-alpine docker compose up -d db
+# Images and the host port can be overridden, e.g.
+#   POSTGRES_PORT=5433 POSTGRES_IMAGE=postgres:16-alpine docker compose up -d db
+# (then use localhost:5433 in backend/.env DATABASE_URL). Put these in a root .env file to make them stick.
 name: devhub
 
 services:
@@ -14,7 +16,7 @@ services:
       POSTGRES_PASSWORD: devhub # local development only
       POSTGRES_DB: devhub
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - devhub-pg:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro

@@ -206,8 +206,12 @@ Each project has its own doc space, plus a team-wide **General** space. Pages ne
 ## Troubleshooting
 
 - **`docker compose up` fails with "Cannot connect to the Docker daemon"**: start Docker Desktop first.
-- **Port already in use (5432, 3567, 4000 or 3000)**: stop the other process, or change the port in
-  `docker-compose.yml` or `.env` (and update `DATABASE_URL`, `PORT` or `BACKEND_URL` to match).
+- **Port already in use (5432, 3567, 4000 or 3000)**: stop the other process, or pick another port. For Postgres,
+  create a root `.env` (next to `docker-compose.yml`) with `POSTGRES_PORT=5433` and set
+  `DATABASE_URL=postgresql://devhub:devhub@localhost:5433/devhub` in `backend/.env`. For the API, change `PORT` in
+  `backend/.env` and `BACKEND_URL` in `frontend/.env.local`.
+- **`P1000: Authentication failed` on `db:deploy`**: another Postgres is answering on that port (not the DevHub
+  container). Use a different `POSTGRES_PORT` as above.
 - **Image pull fails with `x509: certificate signed by unknown authority`**: your network (corporate proxy /
   VPN) intercepts TLS to Docker Hub. Either add the proxy's root certificate to Docker Desktop (ask IT), or use
   images you already have plus the public SuperTokens demo core:
