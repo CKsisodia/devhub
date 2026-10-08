@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Builds
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Env files (keep the documented examples)
+.env
+.env.*
+!.env.example
+
+# Local uploads (dev fallback for Vercel Blob)
+backend/uploads/
+
+# Misc
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
+.vercel

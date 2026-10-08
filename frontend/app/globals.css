@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+/* Design tokens from the UI design brief (light mode only for the MVP). */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-canvas: #fafafa;
+  --color-surface: #ffffff;
+  --color-subtle: #f4f4f5;
+  --color-line: #e4e4e7;
+  --color-line-strong: #d4d4d8;
+  --color-muted: #71717a;
+  --color-secondary: #52525b;
+  --color-ink: #18181b;
+
+  --color-accent-50: #f5f3ff;
+  --color-accent-100: #ede9fe;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12);
+  --shadow-ai-glow: 0 0 0 1px rgba(124, 58, 237, 0.25), 0 8px 24px rgba(79, 70, 229, 0.18);
+
+  --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root {
+  --ai-gradient: linear-gradient(135deg, #7c3aed 0%, #4f46e5 55%, #2563eb 100%);
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer utilities {
+  .bg-ai {
+    background-image: var(--ai-gradient);
+  }
+  .text-ai {
+    background-image: var(--ai-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* 1px gradient border: gradient on the border-box, solid fill on the padding-box. */
+  .ai-border {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(var(--ai-fill, #fff), var(--ai-fill, #fff)) padding-box,
+      var(--ai-gradient) border-box;
+  }
+  /* Frosted overlay (modals, drawers, menus, toasts). Fill is a bit more opaque than the brief's 0.72
+     so overlay text stays readable over busy tables and where backdrop blur is unsupported. */
+  .glass {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    @apply backdrop-blur-[16px];
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .focus-ring {
+    @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500;
+  }
+}
+
+/* AI "generating" shimmer along the border */
+@keyframes ai-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.ai-generating {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    linear-gradient(90deg, #7c3aed, #4f46e5, #2563eb, #4f46e5, #7c3aed) border-box;
+  background-size: 100% 100%, 200% 100%;
+  animation: ai-shimmer 1.5s linear infinite;
+}
+
+@keyframes skeleton {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f4f4f5 0px, #ececee 40px, #f4f4f5 80px);
+  background-size: 200px 100%;
+  animation: skeleton 1.2s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.animate-in {
+  animation: fade-in-up 200ms var(--ease-out-soft) both;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+.animate-shake {
+  animation: shake 200ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-generating, .skeleton, .animate-in, .animate-shake { animation: none !important; }
+}
+
+/* Markdown reader */
+.prose-doc { font-size: 16px; line-height: 26px; color: var(--color-ink); }
+.prose-doc h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 16px; }
+.prose-doc h2 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 28px 0 12px; scroll-margin-top: 80px; }
+.prose-doc h3 { font-size: 16px; line-height: 24px; font-weight: 600; margin: 20px 0 8px; scroll-margin-top: 80px; }
+.prose-doc p { margin: 0 0 14px; }
+.prose-doc ul { list-style: disc; padding-left: 22px; margin: 0 0 14px; }
+.prose-doc ol { list-style: decimal; padding-left: 22px; margin: 0 0 14px; }
+.prose-doc li { margin: 4px 0; }
+.prose-doc a { color: var(--color-accent-600); text-decoration: underline; text-underline-offset: 2px; }
+.prose-doc blockquote { border-left: 3px solid var(--color-accent-100); padding-left: 14px; color: var(--color-secondary); margin: 0 0 14px; }
+.prose-doc code { font-family: var(--font-mono); font-size: 13px; background: var(--color-subtle); padding: 1px 5px; border-radius: 4px; }
+.prose-doc pre { font-family: var(--font-mono); font-size: 13px; line-height: 20px; background: #18181b; color: #f4f4f5; padding: 14px 16px; border-radius: 12px; overflow-x: auto; margin: 0 0 16px; }
+.prose-doc pre code { background: transparent; padding: 0; color: inherit; }
+.prose-doc table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 14px; }
+.prose-doc th, .prose-doc td { border: 1px solid var(--color-line); padding: 8px 10px; text-align: left; }
+.prose-doc th { background: var(--color-subtle); font-weight: 500; }
+.prose-doc img { max-width: 100%; border-radius: 12px; border: 1px solid var(--color-line); }
+.prose-doc hr { border: 0; border-top: 1px solid var(--color-line); margin: 24px 0; }
+.prose-sm.prose-doc { font-size: 14px; line-height: 22px; }
