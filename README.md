@@ -208,6 +208,15 @@ Each project has its own doc space, plus a team-wide **General** space. Pages ne
 - **`docker compose up` fails with "Cannot connect to the Docker daemon"**: start Docker Desktop first.
 - **Port already in use (5432, 3567, 4000 or 3000)**: stop the other process, or change the port in
   `docker-compose.yml` or `.env` (and update `DATABASE_URL`, `PORT` or `BACKEND_URL` to match).
+- **Image pull fails with `x509: certificate signed by unknown authority`**: your network (corporate proxy /
+  VPN) intercepts TLS to Docker Hub. Either add the proxy's root certificate to Docker Desktop (ask IT), or use
+  images you already have plus the public SuperTokens demo core:
+  ```bash
+  POSTGRES_IMAGE=postgres:16-alpine docker compose up -d db        # any cached postgres:15+ image works
+  # backend/.env:  SUPERTOKENS_CONNECTION_URI=https://try.supertokens.com
+  ```
+  Postgres 15 or 16 works the same as 17 for this app. (If you ever switch the image's major version on an existing
+  `devhub-pg` volume, run `docker compose down -v` first. This deletes the local DB, which you can re-seed.)
 - **No OTP in the console**: check the number is a seeded or added user and active, and that the backend
   terminal shows `SMS provider: console`.
 - **Signed out unexpectedly after re-seeding**: the seed recreates users, so just sign in again.

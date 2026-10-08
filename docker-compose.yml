@@ -1,11 +1,13 @@
 # Local infrastructure for DevHub / FE Panel.
 #   docker compose up -d      -> Postgres on localhost:5432 and a self-hosted SuperTokens core on localhost:3567
+#   docker compose up -d db   -> only Postgres (use with SUPERTOKENS_CONNECTION_URI=https://try.supertokens.com)
 # The frontend and backend run on your machine with npm (see README.md).
+# Images can be overridden, e.g. POSTGRES_IMAGE=postgres:16-alpine docker compose up -d db
 name: devhub
 
 services:
   db:
-    image: postgres:17-alpine
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_USER: devhub
@@ -26,7 +28,7 @@ services:
   # database of the same Postgres. Alternative: set SUPERTOKENS_CONNECTION_URI=https://try.supertokens.com
   # in backend/.env to use SuperTokens' public demo core instead (no container needed).
   supertokens:
-    image: registry.supertokens.io/supertokens/supertokens-postgresql:12.2
+    image: ${SUPERTOKENS_IMAGE:-registry.supertokens.io/supertokens/supertokens-postgresql:12.2}
     restart: unless-stopped
     depends_on:
       db:
