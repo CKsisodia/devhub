@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-export const TASK_STATUSES = ["BACKLOG", "TODO", "IN_PROGRESS", "REVIEW", "DONE"] as const;
-export const TASK_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+export const BACKLOG_STATUSES = ["IN_PROGRESS", "HOLD", "DONE", "REJECT"] as const;
 export const PROJECT_STATUSES = ["ACTIVE", "ON_HOLD", "COMPLETED"] as const;
 export const LEARNING_TYPES = ["BLOG", "ARTICLE", "NEWS"] as const;
 
@@ -12,33 +11,27 @@ const isoDate = z
 
 const tags = z.array(z.string().trim().min(1).max(40)).max(20);
 
-export const taskCreateSchema = z.object({
+export const backlogCreateSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
-  description: z.string().max(20000).default(""),
-  projectId: z.uuid("Project is required"),
-  assigneeId: z.uuid().nullable().optional(),
-  priority: z.enum(TASK_PRIORITIES).default("MEDIUM"),
-  status: z.enum(TASK_STATUSES).default("BACKLOG"),
-  dueDate: isoDate.nullable().optional(),
-  tags: tags.default([]),
+  notes: z.string().max(20000).default(""),
+  projectId: z.uuid().nullable().optional(),
+  status: z.enum(BACKLOG_STATUSES).default("IN_PROGRESS"),
 });
 
-export const taskUpdateSchema = z
+export const backlogUpdateSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
-    description: z.string().max(20000),
-    projectId: z.uuid(),
-    assigneeId: z.uuid().nullable(),
-    priority: z.enum(TASK_PRIORITIES),
-    status: z.enum(TASK_STATUSES),
-    dueDate: isoDate.nullable(),
-    tags,
+    notes: z.string().max(20000),
+    projectId: z.uuid().nullable(),
+    status: z.enum(BACKLOG_STATUSES),
   })
   .partial();
 
-export const taskBulkSchema = z.object({
-  creates: z.array(taskCreateSchema).max(50).default([]),
-  updates: z.array(z.object({ id: z.uuid(), patch: taskUpdateSchema })).max(100).default([]),
+export const backlogStatusSchema = z.object({ status: z.enum(BACKLOG_STATUSES) });
+
+export const backlogBulkSchema = z.object({
+  creates: z.array(backlogCreateSchema).max(50).default([]),
+  updates: z.array(z.object({ id: z.uuid(), patch: backlogUpdateSchema })).max(100).default([]),
 });
 
 export const projectCreateSchema = z.object({
@@ -104,17 +97,24 @@ export const docUpdateSchema = z
   })
   .partial();
 
+const email = z.email("Enter a valid email address").trim().toLowerCase().max(254);
+const tempPassword = z.string().min(10, "Temporary password: at least 10 characters").max(128);
+
 export const userCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
-  phoneNumber: z.string().trim().min(6, "Mobile number is required").max(20),
+  email,
+  tempPassword,
 });
 
 export const userUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
+    email,
     active: z.boolean(),
   })
   .partial();
+
+export const userResetPasswordSchema = z.object({ tempPassword });
 
 export const aiDraftSchema = z.object({
   prompt: z.string().trim().min(3, "Type a request for the AI").max(2000),

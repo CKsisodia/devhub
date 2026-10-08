@@ -1,11 +1,11 @@
-// DevHub / FE Panel data model (see requirements v1.1, section 4)
+// DevHub / FE Panel data model (see requirements v1.2, section 4)
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -15,19 +15,11 @@ enum ProjectStatus {
   COMPLETED
 }
 
-enum TaskStatus {
-  BACKLOG
-  TODO
+enum BacklogStatus {
   IN_PROGRESS
-  REVIEW
+  HOLD
   DONE
-}
-
-enum TaskPriority {
-  LOW
-  MEDIUM
-  HIGH
-  URGENT
+  REJECT
 }
 
 enum LearningType {
@@ -43,18 +35,23 @@ model Role {
 }
 
 model User {
-  id                String   @id @default(uuid()) @db.Uuid
-  name              String
-  phoneNumber       String   @unique @map("phone_number") // E.164, e.g. +919876500001
-  supertokensUserId String?  @unique @map("supertokens_user_id")
-  roleId            String   @map("role_id") @db.Uuid
-  role              Role     @relation(fields: [roleId], references: [id])
-  active            Boolean  @default(true)
-  createdAt         DateTime @default(now()) @map("created_at")
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String
+  email              String    @unique // stored lower-case
+  passwordHash       String    @map("password_hash") // argon2id
+  mustChangePassword Boolean   @default(false) @map("must_change_password") // true after an admin sets a temporary password
+  totpEnabled        Boolean   @default(false) @map("totp_enabled")
+  totpSecretEnc      String?   @map("totp_secret_enc") // AES-256-GCM encrypted with TOTP_ENCRYPTION_KEY
+  totpLastStep       Int?      @map("totp_last_step") // last accepted 30 s time-step (blocks code replay)
+  roleId             String    @map("role_id") @db.Uuid
+  role               Role      @relation(fields: [roleId], references: [id])
+  active             Boolean   @default(true)
+  lastLoginAt        DateTime? @map("last_login_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
 
+  sessions      Session[]
   memberships   ProjectMember[]
-  assignedTasks Task[]          @relation("TaskAssignee")
-  createdTasks  Task[]          @relation("TaskCreatedBy")
+  backlogItems  BacklogItem[]
   projects      Project[]       @relation("ProjectCreatedBy")
   learningItems LearningItem[]
   docsCreated   Doc[]           @relation("DocCreatedBy")
@@ -63,6 +60,22 @@ model User {
   activity      ActivityLog[]
 
   @@map("users")
+}
+
+/// Server-side sessions. The browser only holds a random token in an httpOnly cookie; we store its SHA-256.
+model Session {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tokenHash            String   @unique @map("token_hash")
+  userId               String   @map("user_id") @db.Uuid
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mfaVerified          Boolean  @default(false) @map("mfa_verified") // false = password OK, TOTP step pending
+  pendingTotpSecretEnc String?  @map("pending_totp_secret_enc") // secret shown as QR during enrolment, until confirmed
+  failedTotpAttempts   Int      @default(0) @map("failed_totp_attempts")
+  expiresAt            DateTime @map("expires_at")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
 }
 
 model Project {
@@ -78,9 +91,9 @@ model Project {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  members ProjectMember[]
-  tasks   Task[]
-  docs    Doc[]
+  members      ProjectMember[]
+  backlogItems BacklogItem[]
+  docs         Doc[]
 
   @@map("projects")
 }
@@ -96,26 +109,22 @@ model ProjectMember {
   @@map("project_members")
 }
 
-model Task {
-  id          String       @id @default(uuid()) @db.Uuid
+/// Backlog = a simple list of notes-like records (no assignee / priority / due date / board columns).
+model BacklogItem {
+  id          String        @id @default(uuid()) @db.Uuid
   title       String
-  description String       @default("")
-  projectId   String       @map("project_id") @db.Uuid
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assigneeId  String?      @map("assignee_id") @db.Uuid
-  assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  priority    TaskPriority @default(MEDIUM)
-  status      TaskStatus   @default(BACKLOG)
-  dueDate     DateTime?    @map("due_date") @db.Date
-  tags        String[]     @default([])
-  createdById String       @map("created_by") @db.Uuid
-  createdBy   User         @relation("TaskCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  notes       String        @default("")
+  projectId   String?       @map("project_id") @db.Uuid // optional: null = not tied to a project
+  project     Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  status      BacklogStatus @default(IN_PROGRESS)
+  createdById String        @map("created_by") @db.Uuid
+  createdBy   User          @relation(fields: [createdById], references: [id])
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
 
   @@index([projectId])
-  @@index([assigneeId])
-  @@map("tasks")
+  @@index([status])
+  @@map("backlog_items")
 }
 
 model LearningItem {
@@ -174,7 +183,7 @@ model ActivityLog {
   id         String   @id @default(uuid()) @db.Uuid
   userId     String   @map("user_id") @db.Uuid
   user       User     @relation(fields: [userId], references: [id])
-  entityType String   @map("entity_type") // task | doc | project | learning | user
+  entityType String   @map("entity_type") // backlog | doc | project | learning | user
   entityId   String   @map("entity_id") @db.Uuid
   projectId  String?  @map("project_id") @db.Uuid // denormalised for dashboard "recent activity"
   action     String // created | updated | deleted

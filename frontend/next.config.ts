@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 /**
- * The browser only ever talks to this Next.js app. Every /api/* request (including SuperTokens'
- * /api/auth/*) is proxied to the separate backend service, so session cookies stay first-party
+ * The browser only ever talks to this Next.js app. Every /api/* request (including sign-in at
+ * /api/auth/*) is proxied to the separate backend service, so the session cookie stays first-party
  * both locally and on Vercel.
  */
 const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:4000").replace(/\/$/, "");

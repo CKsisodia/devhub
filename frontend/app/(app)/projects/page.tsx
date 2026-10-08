@@ -22,7 +22,7 @@ export default function ProjectsPage() {
     <>
       <PageHeader
         title="Projects"
-        subtitle="Tasks, people and docs grouped by project."
+        subtitle="Backlog, people and docs grouped by project."
         actions={
           <>
             <label className="mr-2 flex items-center gap-2 text-sm text-muted">
@@ -61,7 +61,7 @@ export default function ProjectsPage() {
                 <p className="mt-1 line-clamp-2 text-sm text-muted">{p.description}</p>
                 <div className="mt-auto pt-5">
                   <div className="mb-1.5 flex justify-between text-[13px] text-muted">
-                    <span>{p.taskCount} tasks</span>
+                    <span>{p.itemCount} backlog item{p.itemCount === 1 ? "" : "s"}</span>
                     <span className="tabular">{p.progress}%</span>
                   </div>
                   <ProgressBar value={p.progress} />

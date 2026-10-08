@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FileText, FolderKanban, GraduationCap, LayoutDashboard, ListTodo, LogOut, Sparkles, Users, ArrowUp } from "lucide-react";
-import Session from "supertokens-web-js/recipe/session";
+import { api } from "@/lib/api";
 import { Logo } from "./Logo";
 import { Avatar, Menu, Modal, cn } from "./ui";
 import { useMe } from "@/lib/hooks";
@@ -55,8 +55,8 @@ function AskAiInput() {
         ref={ref}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        aria-label="Ask AI to add or update tasks"
-        placeholder="Ask AI to add or update tasks…"
+        aria-label="Ask AI to add or update backlog items"
+        placeholder="Ask AI to add or update backlog items…"
         className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
       />
       <kbd className="hidden rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted sm:inline">⌘K</kbd>
@@ -83,7 +83,7 @@ function MobileAskAi() {
           }}
           className="ai-border mb-3 flex items-end gap-2 rounded-xl p-2"
         >
-          <textarea autoFocus value={value} onChange={(e) => setValue(e.target.value)} rows={3} placeholder="Ask AI to add or update tasks…" className="flex-1 resize-none bg-transparent p-1 text-sm outline-none" />
+          <textarea autoFocus value={value} onChange={(e) => setValue(e.target.value)} rows={3} placeholder="Ask AI to add or update backlog items…" className="flex-1 resize-none bg-transparent p-1 text-sm outline-none" />
           <button type="submit" aria-label="Send" className="bg-ai inline-flex size-8 items-center justify-center rounded-md text-white">
             <ArrowUp className="size-4" />
           </button>
@@ -102,7 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const current = [...NAV, { href: "/users", label: "Users" }].find((n) => active(n.href));
 
   async function signOut() {
-    await Session.signOut();
+    await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     router.replace("/login");
   }
 
@@ -177,7 +177,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <div className="border-b border-line bg-surface px-4 py-2 text-xs text-muted md:hidden">
-          <span className="font-medium text-ink">{me.user.name}</span> · {me.user.phoneMasked}
+          <span className="font-medium text-ink">{me.user.name}</span> · {me.user.email}
         </div>
         <main className="mx-auto w-full max-w-[1200px] px-4 pb-28 pt-6 md:px-8 md:pb-12 md:pt-8">{children}</main>
       </div>

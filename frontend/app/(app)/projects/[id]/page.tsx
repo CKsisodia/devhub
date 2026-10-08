@@ -7,14 +7,14 @@ import useSWR from "swr";
 import { Archive, ArchiveRestore, ArrowLeft, CalendarDays, ChevronRight, FileText, MoreHorizontal, Pencil, Plus, Trash2, UserMinus, Users } from "lucide-react";
 import { api, fetcher } from "@/lib/api";
 import { formatDate, STATUS_LABEL, STATUS_STYLE, STATUSES } from "@/lib/format";
-import { refreshTaskData, useIsAdmin, useUsers } from "@/lib/hooks";
+import { refreshBacklogData, useIsAdmin, useUsers } from "@/lib/hooks";
 import type { DocNode, ProjectDetail } from "@/lib/types";
 import { Avatar, Button, Card, ConfirmModal, EmptyState, IconButton, Menu, PageHeader, Pill, ProgressBar, ProjectStatusPill, Select, Skeleton, Tabs } from "@/components/ui";
 import { BacklogView } from "@/components/BacklogView";
 import { ProjectForm } from "@/components/ProjectForm";
 import { useToast } from "@/components/toast";
 
-type Tab = "overview" | "tasks" | "docs" | "members";
+type Tab = "overview" | "backlog" | "docs" | "members";
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -42,7 +42,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     try {
       await fn();
       await mutate();
-      refreshTaskData();
+      refreshBacklogData();
       toast(msg);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Something went wrong", "error");
@@ -89,7 +89,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         onChange={setTab}
         tabs={[
           { value: "overview", label: "Overview" },
-          { value: "tasks", label: "Tasks", count: project.taskCount },
+          { value: "backlog", label: "Backlog", count: project.itemCount },
           { value: "docs", label: "Docs", count: docs?.length },
           { value: "members", label: "Members", count: project.members.length },
         ]}
@@ -103,11 +103,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <div className="mt-6">
               <div className="mb-1.5 flex justify-between text-sm">
                 <span className="font-medium">Progress</span>
-                <span className="tabular text-muted">{project.progress}%</span>
+                <span className="tabular text-muted" title="Done ÷ all items except rejected ones">{project.progress}%</span>
               </div>
               <ProgressBar value={project.progress} />
             </div>
-            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {STATUSES.map((s) => (
                 <div key={s} className="rounded-lg bg-subtle/70 p-3">
                   <div className="flex items-center gap-1.5 text-xs text-muted">
@@ -145,7 +145,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      {tab === "tasks" && <BacklogView projectId={id} />}
+      {tab === "backlog" && <BacklogView projectId={id} />}
 
       {tab === "docs" && (
         <Card className="p-0">
@@ -216,8 +216,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{m.name}</div>
                     <div className="text-xs text-muted">
-                      {m.openTasks} open task{m.openTasks === 1 ? "" : "s"}
-                      {m.active === false && " · Deactivated"}
+                      {m.active === false ? "Deactivated" : "Member"}
                     </div>
                   </div>
                   {isAdmin && (
@@ -236,12 +235,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       <ConfirmModal
         open={confirmDelete}
         title="Delete project?"
-        text={`"${project.name}" and all its tasks and docs will be permanently deleted. Consider archiving instead.`}
+        text={`"${project.name}" and its docs will be permanently deleted; its backlog items stay, without a project. Consider archiving instead.`}
         onClose={() => setConfirmDelete(false)}
         onConfirm={async () => {
           try {
             await api(`/api/projects/${id}`, { method: "DELETE" });
-            refreshTaskData();
+            refreshBacklogData();
             toast("Project deleted");
             router.push("/projects");
           } catch (e) {

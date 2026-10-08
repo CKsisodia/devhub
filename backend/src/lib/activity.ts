@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-export type EntityType = "task" | "doc" | "project" | "learning" | "user";
+export type EntityType = "backlog" | "doc" | "project" | "learning" | "user";
 
 export async function logActivity(
   db: Db,

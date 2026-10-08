@@ -5,30 +5,24 @@ import { requireAdmin } from "../auth/middleware.js";
 import { diff, logActivity } from "../lib/activity.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { toDate, ymd } from "../lib/dto.js";
-import { projectCreateSchema, projectUpdateSchema, TASK_STATUSES } from "../lib/schemas.js";
+import { projectCreateSchema, projectUpdateSchema } from "../lib/schemas.js";
+import { statusCounts } from "../lib/stats.js";
 
 export const projectsRouter = Router();
-
-function statusCounts(tasks: { status: (typeof TASK_STATUSES)[number] }[]) {
-  const counts = Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<(typeof TASK_STATUSES)[number], number>;
-  for (const t of tasks) counts[t.status]++;
-  const total = tasks.length;
-  return { counts, total, progress: total ? Math.round((counts.DONE / total) * 100) : 0 };
-}
 
 projectsRouter.get("/", async (req, res) => {
   const includeArchived = req.query.includeArchived === "1" || req.query.includeArchived === "true";
   const projects = await prisma.project.findMany({
     where: includeArchived ? {} : { archived: false },
     include: {
-      tasks: { select: { status: true } },
+      backlogItems: { select: { status: true } },
       members: { include: { user: { select: { id: true, name: true, active: true } } }, orderBy: { addedAt: "asc" } },
     },
     orderBy: [{ archived: "asc" }, { name: "asc" }],
   });
   res.json(
     projects.map((p) => {
-      const s = statusCounts(p.tasks);
+      const s = statusCounts(p.backlogItems);
       return {
         id: p.id,
         name: p.name,
@@ -37,7 +31,7 @@ projectsRouter.get("/", async (req, res) => {
         archived: p.archived,
         startDate: ymd(p.startDate),
         targetDate: ymd(p.targetDate),
-        taskCount: s.total,
+        itemCount: s.total,
         progress: s.progress,
         memberCount: p.members.length,
         members: p.members.map((m) => m.user),
@@ -50,13 +44,13 @@ projectsRouter.get("/:id", async (req, res) => {
   const p = await prisma.project.findUnique({
     where: { id: String(req.params.id) },
     include: {
-      tasks: { select: { status: true, assigneeId: true } },
+      backlogItems: { select: { status: true } },
       members: { include: { user: { select: { id: true, name: true, active: true } } }, orderBy: { addedAt: "asc" } },
       createdBy: { select: { id: true, name: true } },
     },
   });
   if (!p) throw notFound("Project not found");
-  const s = statusCounts(p.tasks);
+  const s = statusCounts(p.backlogItems);
   res.json({
     id: p.id,
     name: p.name,
@@ -67,12 +61,9 @@ projectsRouter.get("/:id", async (req, res) => {
     targetDate: ymd(p.targetDate),
     createdBy: p.createdBy,
     counts: s.counts,
-    taskCount: s.total,
+    itemCount: s.total,
     progress: s.progress,
-    members: p.members.map((m) => ({
-      ...m.user,
-      openTasks: p.tasks.filter((t) => t.assigneeId === m.user.id && t.status !== "DONE").length,
-    })),
+    members: p.members.map((m) => m.user),
   });
 });
 
@@ -109,7 +100,7 @@ projectsRouter.patch("/:id", requireAdmin, async (req, res) => {
 projectsRouter.delete("/:id", requireAdmin, async (req, res) => {
   const p = await prisma.project.findUnique({ where: { id: String(req.params.id) } });
   if (!p) throw notFound("Project not found");
-  await prisma.project.delete({ where: { id: p.id } }); // cascades members, tasks and docs
+  await prisma.project.delete({ where: { id: p.id } }); // cascades members and docs; backlog items keep existing without a project
   await logActivity(prisma, { userId: req.user!.id, entityType: "project", entityId: p.id, action: "deleted", summary: `deleted project ${p.name}` });
   res.status(204).end();
 });

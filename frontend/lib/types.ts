@@ -1,11 +1,10 @@
 export type Role = "admin" | "viewer";
-export type TaskStatus = "BACKLOG" | "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
-export type TaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+export type BacklogStatus = "IN_PROGRESS" | "HOLD" | "DONE" | "REJECT";
 export type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED";
 export type LearningType = "BLOG" | "ARTICLE" | "NEWS";
 
 export interface Me {
-  user: { id: string; name: string; role: Role; phoneMasked: string };
+  user: { id: string; name: string; role: Role; email: string };
   ai: { mode: "llm" | "mock" | "disabled" };
 }
 
@@ -16,40 +15,25 @@ export interface UserRef {
 }
 
 export interface AdminUser extends UserRef {
+  email: string;
   active: boolean;
   role: Role;
-  phoneMasked: string;
-  hasSignedIn: boolean;
+  totpEnabled: boolean;
+  mustChangePassword: boolean;
+  lastLoginAt: string | null;
   createdAt: string;
 }
 
-export interface Task {
+export interface BacklogItem {
   id: string;
   title: string;
-  description: string;
-  projectId: string;
-  project: { id: string; name: string };
-  assigneeId: string | null;
-  assignee: UserRef | null;
-  priority: TaskPriority;
-  status: TaskStatus;
-  dueDate: string | null;
-  tags: string[];
+  notes: string;
+  projectId: string | null;
+  project: { id: string; name: string } | null;
+  status: BacklogStatus;
   createdBy: UserRef;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface HistoryEntry {
-  id: string;
-  user: UserRef;
-  action: string;
-  summary: string;
-  createdAt: string;
-}
-
-export interface TaskDetail extends Task {
-  history: HistoryEntry[];
 }
 
 export interface Activity {
@@ -64,9 +48,10 @@ export interface Activity {
 
 export interface Dashboard {
   user: UserRef;
-  counts: Record<TaskStatus, number>;
-  openTasks: Task[];
-  projects: { id: string; name: string; status: ProjectStatus; total: number; done: number; progress: number }[];
+  counts: Record<BacklogStatus, number>;
+  inProgress: BacklogItem[];
+  onHold: BacklogItem[];
+  projects: { id: string; name: string; status: ProjectStatus; counts: Record<BacklogStatus, number>; total: number; done: number; progress: number }[];
   activity: Activity[];
 }
 
@@ -78,7 +63,7 @@ export interface ProjectSummary {
   archived: boolean;
   startDate: string | null;
   targetDate: string | null;
-  taskCount: number;
+  itemCount: number;
   progress: number;
   memberCount: number;
   members: UserRef[];
@@ -86,8 +71,8 @@ export interface ProjectSummary {
 
 export interface ProjectDetail extends Omit<ProjectSummary, "members" | "memberCount"> {
   createdBy: UserRef;
-  counts: Record<TaskStatus, number>;
-  members: (UserRef & { openTasks: number })[];
+  counts: Record<BacklogStatus, number>;
+  members: UserRef[];
 }
 
 export interface LearningItem {
@@ -128,45 +113,47 @@ export interface DocPage {
 // AI drafts
 export interface DraftFlags {
   project?: string;
-  assignee?: string;
-  dueDate?: string;
   status?: string;
-  priority?: string;
 }
-export interface DraftTask {
+export interface DraftItem {
   title: string;
-  description: string;
+  notes: string;
   projectId: string | null;
   projectName: string | null;
-  assigneeId: string | null;
-  assigneeName: string | null;
-  priority: TaskPriority;
-  status: TaskStatus;
-  dueDate: string | null;
-  tags: string[];
+  status: BacklogStatus;
   flags: DraftFlags;
 }
-export interface TaskFields {
+export interface ItemFields {
   title?: string;
-  description?: string;
-  projectId?: string;
-  assigneeId?: string | null;
-  priority?: TaskPriority;
-  status?: TaskStatus;
-  dueDate?: string | null;
-  tags?: string[];
+  notes?: string;
+  projectId?: string | null;
+  status?: BacklogStatus;
 }
 export interface DraftUpdate {
-  taskId: string;
-  taskTitle: string;
-  before: TaskFields;
-  after: TaskFields;
+  itemId: string;
+  itemTitle: string;
+  before: ItemFields;
+  after: ItemFields;
   flags: DraftFlags;
 }
 export interface DraftResult {
-  creates: DraftTask[];
+  creates: DraftItem[];
   updates: DraftUpdate[];
   warnings: string[];
   message?: string;
   source: "llm" | "mock";
+}
+
+// Sign-in
+export type LoginStep = "totp_setup" | "totp_verify" | "set_password" | "done";
+export interface LoginState {
+  step: LoginStep;
+  user: { name: string; email: string };
+}
+export interface TotpSetup {
+  qrDataUrl: string;
+  secret: string;
+  otpauthUri: string;
+  issuer: string;
+  account: string;
 }

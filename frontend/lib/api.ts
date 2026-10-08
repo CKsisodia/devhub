@@ -11,7 +11,7 @@ export class ApiError extends Error {
 
 type Options = { method?: string; body?: unknown; form?: FormData };
 
-/** Same-origin JSON fetch. SuperTokens' interceptor refreshes the session on 401 automatically. */
+/** Same-origin JSON fetch; the httpOnly session cookie is sent automatically. */
 export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
   const res = await fetch(path, {
     method: opts.method ?? (opts.body || opts.form ? "POST" : "GET"),
@@ -23,7 +23,7 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     // Session gone (expired, revoked or user deactivated): AuthGate listens and sends the user to /login.
-    if (res.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("devhub:unauthorised"));
+    if (res.status === 401 && !path.startsWith("/api/auth/") && typeof window !== "undefined") window.dispatchEvent(new Event("devhub:unauthorised"));
     throw new ApiError(res.status, (data as { error?: string; message?: string }).error ?? (data as { message?: string }).message ?? `Request failed (${res.status})`);
   }
   return data as T;

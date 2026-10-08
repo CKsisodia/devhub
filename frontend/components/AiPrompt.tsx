@@ -3,23 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, ArrowUp, Sparkles, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, formatDate } from "@/lib/format";
-import { refreshTaskData, useMe, useProjects, useUsers } from "@/lib/hooks";
-import type { DraftResult, DraftTask, DraftUpdate, Task, TaskFields, TaskPriority, TaskStatus } from "@/lib/types";
-import { Banner, Button, IconButton, Input, Select, Skeleton, TagInput, cn } from "./ui";
+import { STATUS_LABEL, STATUSES } from "@/lib/format";
+import { refreshBacklogData, useMe, useProjects } from "@/lib/hooks";
+import type { BacklogItem, BacklogStatus, DraftItem, DraftResult, DraftUpdate, ItemFields } from "@/lib/types";
+import { Banner, Button, IconButton, Input, Select, Skeleton, Textarea, cn } from "./ui";
 import { useToast } from "./toast";
 
-const EXAMPLES = ["Add 3 tasks for the login page redesign, high priority, assign to Ravi", "Move all Ravi's login tasks to Review", "Add a task to audit checkout bundle size for Daniel, due next Friday"];
+const EXAMPLES = ["Add 3 items for the login page redesign", "Mark all Checkout Performance items as done", "Add a note about upgrading Storybook, on hold"];
 
-type EditableDraft = DraftTask & { key: number; selected: boolean };
+type EditableDraft = DraftItem & { key: number; selected: boolean };
 type EditableUpdate = DraftUpdate & { selected: boolean };
 
-/** Admin-only prompt box: drafts tasks/updates with the LLM, shows an editable preview, saves only on confirm. */
+/** Admin-only prompt box: drafts backlog items / updates with the LLM, shows an editable preview, saves only on confirm. */
 export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }: { initialPrompt?: string | null; onConsumedInitial?: () => void; onSaved?: (ids: string[]) => void; onManual?: () => void }) {
   const me = useMe();
   const toast = useToast();
   const { data: projects } = useProjects();
-  const { data: users } = useUsers();
   const [prompt, setPrompt] = useState("");
   const [state, setState] = useState<"idle" | "generating" | "preview" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -43,11 +42,11 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
       setMeta({ message: res.message, warnings: res.warnings, source: res.source });
       if (!res.creates.length && !res.updates.length) {
         setState("error");
-        setError(res.message || "The AI didn't propose any changes. Try rephrasing or add a task manually.");
+        setError(res.message || "The AI didn't propose any changes. Try rephrasing or add an item manually.");
       } else setState("preview");
     } catch (e) {
       setState("error");
-      setError(e instanceof Error ? e.message : "Couldn't draft tasks. Try rephrasing or add a task manually.");
+      setError(e instanceof Error ? e.message : "Couldn't draft items. Try rephrasing or add an item manually.");
     }
   }
 
@@ -66,9 +65,6 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
         if (d.key !== key) return d;
         const flags = { ...d.flags };
         if ("projectId" in patch) delete flags.project;
-        if ("assigneeId" in patch) delete flags.assignee;
-        if ("dueDate" in patch) delete flags.dueDate;
-        if ("priority" in patch) delete flags.priority;
         if ("status" in patch) delete flags.status;
         return { ...d, ...patch, flags };
       }),
@@ -76,7 +72,7 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
 
   const selectedDrafts = drafts.filter((d) => d.selected);
   const selectedUpdates = updates.filter((u) => u.selected && Object.keys(u.after).length);
-  const blocking = selectedDrafts.filter((d) => !d.projectId || !d.title.trim());
+  const blocking = selectedDrafts.filter((d) => !d.title.trim());
 
   function discard() {
     setState("idle");
@@ -86,28 +82,19 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
   }
 
   async function confirm() {
-    if (blocking.length) return toast("Pick a project (and title) for every selected draft.", "error");
+    if (blocking.length) return toast("Every selected draft needs a title.", "error");
     setSaving(true);
     try {
-      const res = await api<{ created: Task[]; updated: Task[] }>("/api/tasks/bulk", {
+      const res = await api<{ created: BacklogItem[]; updated: BacklogItem[] }>("/api/backlog/bulk", {
         body: {
-          creates: selectedDrafts.map((d) => ({
-            title: d.title.trim(),
-            description: d.description,
-            projectId: d.projectId,
-            assigneeId: d.assigneeId,
-            priority: d.priority,
-            status: d.status,
-            dueDate: d.dueDate,
-            tags: d.tags,
-          })),
-          updates: selectedUpdates.map((u) => ({ id: u.taskId, patch: u.after })),
+          creates: selectedDrafts.map((d) => ({ title: d.title.trim(), notes: d.notes, projectId: d.projectId, status: d.status })),
+          updates: selectedUpdates.map((u) => ({ id: u.itemId, patch: u.after })),
         },
       });
-      await refreshTaskData();
+      await refreshBacklogData();
       const parts = [];
-      if (res.created.length) parts.push(`${res.created.length} task${res.created.length === 1 ? "" : "s"} added to Backlog`);
-      if (res.updated.length) parts.push(`${res.updated.length} task${res.updated.length === 1 ? "" : "s"} updated`);
+      if (res.created.length) parts.push(`${res.created.length} item${res.created.length === 1 ? "" : "s"} added to the backlog`);
+      if (res.updated.length) parts.push(`${res.updated.length} item${res.updated.length === 1 ? "" : "s"} updated`);
       toast(parts.join(" · "));
       onSaved?.([...res.created, ...res.updated].map((t) => t.id));
       discard();
@@ -119,19 +106,15 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
     }
   }
 
-  const userName = (id: string | null | undefined) => (id ? (users?.find((u) => u.id === id)?.name ?? "Unknown") : "Unassigned");
-  const projectName = (id: string | undefined) => projects?.find((p) => p.id === id)?.name ?? "—";
-  const fieldValue = (k: keyof TaskFields, v: TaskFields[keyof TaskFields]) => {
+  const projectName = (id: string | null | undefined) => (id ? (projects?.find((p) => p.id === id)?.name ?? "Unknown project") : "No project");
+  const fieldValue = (k: keyof ItemFields, v: ItemFields[keyof ItemFields]) => {
+    if (k === "projectId") return projectName(v as string | null | undefined);
     if (v === undefined) return "—";
-    if (k === "status") return STATUS_LABEL[v as TaskStatus];
-    if (k === "priority") return PRIORITY_LABEL[v as TaskPriority];
-    if (k === "assigneeId") return userName(v as string | null);
-    if (k === "projectId") return projectName(v as string);
-    if (k === "dueDate") return v ? formatDate(v as string, true) : "None";
-    if (k === "tags") return (v as string[]).join(", ") || "None";
+    if (k === "status") return STATUS_LABEL[v as BacklogStatus];
+    if (k === "notes") return (v as string).length > 60 ? `${(v as string).slice(0, 60)}…` : String(v);
     return String(v);
   };
-  const FIELD_LABEL: Record<keyof TaskFields, string> = { title: "Title", description: "Description", projectId: "Project", assigneeId: "Assignee", priority: "Priority", status: "Status", dueDate: "Due", tags: "Tags" };
+  const FIELD_LABEL: Record<keyof ItemFields, string> = { title: "Title", notes: "Notes", projectId: "Project", status: "Status" };
 
   const disabled = me.ai.mode === "disabled";
 
@@ -161,8 +144,8 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
           }}
           rows={1}
           disabled={state === "generating"}
-          aria-label="Ask AI to add or update tasks"
-          placeholder={disabled ? "AI drafting isn't configured on the server (set LLM_API_KEY)." : "Ask AI to add or update tasks… e.g. “Add 3 tasks for Login Redesign, high priority, assign to Ravi”"}
+          aria-label="Ask AI to add or update backlog items"
+          placeholder={disabled ? "AI drafting isn't configured on the server (set LLM_API_KEY)." : "Ask AI to add or update backlog items… e.g. “Add 3 items for Login Redesign”"}
           className="max-h-24 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm leading-5 outline-none placeholder:text-muted disabled:opacity-60"
         />
         <button type="submit" aria-label="Send to AI" disabled={state === "generating" || !prompt.trim()} className="bg-ai focus-ring inline-flex size-8 shrink-0 items-center justify-center rounded-md text-white transition hover:brightness-110 disabled:opacity-40">
@@ -182,7 +165,7 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
       {state === "generating" && (
         <div className="mt-3 rounded-xl border border-accent-100 bg-accent-50 p-4">
           <p className="mb-3 flex items-center gap-2 text-sm font-medium text-accent-600">
-            <Sparkles className="size-4 animate-pulse" /> Drafting tasks…
+            <Sparkles className="size-4 animate-pulse" /> Drafting backlog items…
           </p>
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="mb-2 h-9 w-full bg-white" />
@@ -196,7 +179,7 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
             {error}{" "}
             {onManual && (
               <button type="button" onClick={onManual} className="font-medium underline">
-                New task
+                Add an item manually
               </button>
             )}
           </Banner>
@@ -233,10 +216,13 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
                     <Input aria-label="Draft title" value={d.title} onChange={(e) => patchDraft(d.key, { title: e.target.value })} invalid={!d.title.trim()} className="font-medium" />
                     <IconButton icon={Trash2} label="Remove draft" onClick={() => setDrafts((ds) => ds.filter((x) => x.key !== d.key))} />
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 pl-6 pr-10 md:grid-cols-3 xl:grid-cols-6">
-                    <DraftField label="Project" flag={d.flags.project}>
-                      <Select aria-label="Draft project" value={d.projectId ?? ""} onChange={(e) => patchDraft(d.key, { projectId: e.target.value || null })} invalid={!d.projectId}>
-                        <option value="">Pick a project</option>
+                  <div className="mt-2 grid gap-2 pl-6 pr-10 md:grid-cols-[1fr_200px_160px]">
+                    <DraftField label="Notes">
+                      <Textarea aria-label="Draft notes" rows={2} value={d.notes} onChange={(e) => patchDraft(d.key, { notes: e.target.value })} className="min-h-0" />
+                    </DraftField>
+                    <DraftField label="Project (optional)" flag={d.flags.project}>
+                      <Select aria-label="Draft project" value={d.projectId ?? ""} onChange={(e) => patchDraft(d.key, { projectId: e.target.value || null })} invalid={Boolean(d.flags.project)}>
+                        <option value="">No project</option>
                         {projects?.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name}
@@ -244,39 +230,14 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
                         ))}
                       </Select>
                     </DraftField>
-                    <DraftField label="Assignee" flag={d.flags.assignee}>
-                      <Select aria-label="Draft assignee" value={d.assigneeId ?? ""} onChange={(e) => patchDraft(d.key, { assigneeId: e.target.value || null })} invalid={Boolean(d.flags.assignee)}>
-                        <option value="">Unassigned</option>
-                        {users?.filter((u) => u.active !== false).map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </DraftField>
-                    <DraftField label="Priority" flag={d.flags.priority}>
-                      <Select aria-label="Draft priority" value={d.priority} onChange={(e) => patchDraft(d.key, { priority: e.target.value as TaskPriority })}>
-                        {PRIORITIES.map((p) => (
-                          <option key={p} value={p}>
-                            {PRIORITY_LABEL[p]}
-                          </option>
-                        ))}
-                      </Select>
-                    </DraftField>
                     <DraftField label="Status" flag={d.flags.status}>
-                      <Select aria-label="Draft status" value={d.status} onChange={(e) => patchDraft(d.key, { status: e.target.value as TaskStatus })}>
+                      <Select aria-label="Draft status" value={d.status} onChange={(e) => patchDraft(d.key, { status: e.target.value as BacklogStatus })}>
                         {STATUSES.map((s) => (
                           <option key={s} value={s}>
                             {STATUS_LABEL[s]}
                           </option>
                         ))}
                       </Select>
-                    </DraftField>
-                    <DraftField label="Due" flag={d.flags.dueDate}>
-                      <Input type="date" aria-label="Draft due date" value={d.dueDate ?? ""} onChange={(e) => patchDraft(d.key, { dueDate: e.target.value || null })} />
-                    </DraftField>
-                    <DraftField label="Tags">
-                      <TagInput value={d.tags} onChange={(tags) => patchDraft(d.key, { tags })} placeholder="tags" />
                     </DraftField>
                   </div>
                 </li>
@@ -288,12 +249,12 @@ export function AiPrompt({ initialPrompt, onConsumedInitial, onSaved, onManual }
             <div className="mt-3 space-y-2 px-5">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted">Proposed updates</h3>
               {updates.map((u) => (
-                <div key={u.taskId} className={cn("flex items-start gap-3 rounded-lg bg-surface p-3 shadow-xs", !u.selected && "opacity-50")}>
-                  <input type="checkbox" aria-label="Include update" checked={u.selected} onChange={(e) => setUpdates((us) => us.map((x) => (x.taskId === u.taskId ? { ...x, selected: e.target.checked } : x)))} className="mt-1 size-4 accent-violet-600" />
+                <div key={u.itemId} className={cn("flex items-start gap-3 rounded-lg bg-surface p-3 shadow-xs", !u.selected && "opacity-50")}>
+                  <input type="checkbox" aria-label="Include update" checked={u.selected} onChange={(e) => setUpdates((us) => us.map((x) => (x.itemId === u.itemId ? { ...x, selected: e.target.checked } : x)))} className="mt-1 size-4 accent-violet-600" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{u.taskTitle}</div>
+                    <div className="text-sm font-medium">{u.itemTitle}</div>
                     <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
-                      {(Object.keys(u.after) as (keyof TaskFields)[]).map((k) => (
+                      {(Object.keys(u.after) as (keyof ItemFields)[]).map((k) => (
                         <span key={k} className="inline-flex items-center gap-1.5">
                           <span className="text-muted">{FIELD_LABEL[k]}:</span>
                           <span className="text-muted line-through">{fieldValue(k, u.before[k])}</span>

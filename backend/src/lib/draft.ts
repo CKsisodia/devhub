@@ -1,72 +1,49 @@
 /**
- * Prompt-based task entry: turning the LLM's JSON answer into a validated, editable draft.
+ * AI backlog entry: turning the LLM's JSON answer into a validated, editable draft.
  * Pure functions (no DB / network) so they are easy to unit-test.
  */
 import { z } from "zod";
-import { TASK_PRIORITIES, TASK_STATUSES } from "./schemas.js";
+import { BACKLOG_STATUSES } from "./schemas.js";
 
-export type Status = (typeof TASK_STATUSES)[number];
-export type Priority = (typeof TASK_PRIORITIES)[number];
+export type Status = (typeof BACKLOG_STATUSES)[number];
 
 export interface DraftContext {
   today: string; // YYYY-MM-DD
   projects: { id: string; name: string }[];
-  users: { id: string; name: string }[];
-  tasks: {
-    id: string;
-    title: string;
-    projectId: string;
-    assigneeId: string | null;
-    status: Status;
-    priority: Priority;
-    dueDate: string | null;
-    tags: string[];
-  }[];
+  items: { id: string; title: string; projectId: string | null; status: Status }[];
 }
 
 export interface DraftFlags {
   project?: string;
-  assignee?: string;
-  dueDate?: string;
   status?: string;
-  priority?: string;
 }
 
-export interface DraftTask {
+export interface DraftItem {
   title: string;
-  description: string;
+  notes: string;
   projectId: string | null;
   projectName: string | null;
-  assigneeId: string | null;
-  assigneeName: string | null;
-  priority: Priority;
   status: Status;
-  dueDate: string | null;
-  tags: string[];
   flags: DraftFlags;
 }
 
-export interface TaskFields {
+export interface ItemFields {
   title?: string;
-  description?: string;
-  projectId?: string;
-  assigneeId?: string | null;
-  priority?: Priority;
+  notes?: string;
+  projectId?: string | null;
   status?: Status;
-  dueDate?: string | null;
-  tags?: string[];
 }
 
 export interface DraftUpdate {
-  taskId: string;
-  taskTitle: string;
-  before: TaskFields;
-  after: TaskFields;
+  itemId: string;
+  itemTitle: string;
+  before: ItemFields;
+  after: ItemFields;
   flags: DraftFlags;
 }
 
 export interface DraftResult {
-  creates: DraftTask[];
+  creates: DraftItem[];
   updates: DraftUpdate[];
   warnings: string[];
   message?: string;
@@ -77,35 +54,11 @@ export interface DraftResult {
 const looseStr = z.union([z.string(), z.number()]).transform(String);
 const optStr = z.union([looseStr, z.null()]).optional();
 
-const rawCreate = z.object({
-  title: looseStr,
-  description: optStr,
-  project: optStr,
-  assignee: optStr,
-  priority: optStr,
-  status: optStr,
-  dueDate: optStr,
-  due_date: optStr,
-  tags: z.union([z.array(looseStr), looseStr, z.null()]).optional(),
-});
-
+const rawCreate = z.object({ title: looseStr, notes: optStr, description: optStr, project: optStr, status: optStr });
 const rawUpdate = z.object({
-  taskId: looseStr,
-  changes: z
-    .object({
-      title: optStr,
-      description: optStr,
-      project: optStr,
-      assignee: optStr,
-      priority: optStr,
-      status: optStr,
-      dueDate: optStr,
-      due_date: optStr,
-      tags: z.union([z.array(looseStr), looseStr, z.null()]).optional(),
-    })
-    .partial(),
+  itemId: looseStr,
+  changes: z.object({ title: optStr, notes: optStr, project: optStr, status: optStr }).partial(),
 });
-
 const rawResponse = z.object({
   creates: z.array(z.unknown()).optional().default([]),
   updates: z.array(z.unknown()).optional().default([]),
@@ -130,32 +83,42 @@ export function extractJson(text: string): unknown {
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+const STATUS_WORDS: Record<string, Status> = {
+  inprogress: "IN_PROGRESS",
+  progress: "IN_PROGRESS",
+  doing: "IN_PROGRESS",
+  wip: "IN_PROGRESS",
+  active: "IN_PROGRESS",
+  open: "IN_PROGRESS",
+  todo: "IN_PROGRESS",
+  started: "IN_PROGRESS",
+  hold: "HOLD",
+  onhold: "HOLD",
+  paused: "HOLD",
+  blocked: "HOLD",
+  waiting: "HOLD",
+  parked: "HOLD",
+  done: "DONE",
+  completed: "DONE",
+  complete: "DONE",
+  finished: "DONE",
+  closed: "DONE",
+  reject: "REJECT",
+  rejected: "REJECT",
+  wontdo: "REJECT",
+  wontfix: "REJECT",
+  cancelled: "REJECT",
+  canceled: "REJECT",
+  dropped: "REJECT",
+};
+
+/** Maps spellings like "In Progress", "on hold", "rejected", "IN_PROGRESS" to a status. */
 export function normalizeStatus(v: string | null | undefined): Status | null {
   if (!v) return null;
-  const n = norm(v).replace(/ /g, "");
-  const map: Record<string, Status> = {
-    backlog: "BACKLOG",
-    todo: "TODO",
-    inprogress: "IN_PROGRESS",
-    doing: "IN_PROGRESS",
-    wip: "IN_PROGRESS",
-    review: "REVIEW",
-    inreview: "REVIEW",
-    done: "DONE",
-    completed: "DONE",
-    complete: "DONE",
-  };
-  return map[n] ?? null;
+  return STATUS_WORDS[norm(v).replace(/ /g, "")] ?? null;
 }
 
-export function normalizePriority(v: string | null | undefined): Priority | null {
-  if (!v) return null;
-  const n = norm(v);
-  const map: Record<string, Priority> = { low: "LOW", medium: "MEDIUM", normal: "MEDIUM", high: "HIGH", urgent: "URGENT", critical: "URGENT" };
-  return map[n] ?? null;
-}
-
-/** Case-insensitive match: exact name, then unique first-name / prefix, then unique substring. */
+/** Case-insensitive match: exact name, then unique prefix / first word, then unique substring. */
 export function matchByName<T extends { id: string; name: string }>(items: T[], query: string): T | null {
   const q = norm(query);
   if (!q) return null;
@@ -168,52 +131,32 @@ export function matchByName<T extends { id: string; name: string }>(items: T[], 
   return null;
 }
 
-const UNASSIGNED = new Set(["", "none", "null", "unassigned", "nobody", "no one"]);
+const NO_PROJECT = new Set(["", "none", "null", "no project", "general", "n a"]);
 
-function parseTags(v: unknown): string[] {
-  const arr = Array.isArray(v) ? v.map(String) : typeof v === "string" ? v.split(",") : [];
-  return [...new Set(arr.map((t) => t.trim().replace(/^#/, "").toLowerCase()).filter(Boolean))].slice(0, 20);
-}
-
-function parseDate(v: string | null | undefined): { value: string | null; flag?: string } {
-  if (v === null || v === undefined || v === "" || norm(v) === "null" || norm(v) === "none") return { value: null };
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v))) return { value: v };
-  return { value: null, flag: `Couldn't read date "${v}"` };
-}
-
-function resolveAssignee(ctx: DraftContext, raw: string | null | undefined, flags: DraftFlags) {
-  if (raw === undefined) return undefined;
-  if (raw === null || UNASSIGNED.has(norm(raw))) return { id: null, name: null };
-  const u = matchByName(ctx.users, raw);
-  if (!u) {
-    flags.assignee = `Not found – pick a user ("${raw}")`;
-    return { id: null, name: raw };
-  }
-  return { id: u.id, name: u.name };
-}
-
+/** undefined = not mentioned; {id:null,name:null} = explicitly no project; unmatched names are flagged. */
 function resolveProject(ctx: DraftContext, raw: string | null | undefined, flags: DraftFlags) {
-  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (raw === undefined) return undefined;
+  if (raw === null || NO_PROJECT.has(norm(raw))) return { id: null, name: null };
   const p = matchByName(ctx.projects, raw);
   if (!p) {
-    flags.project = `Not found – pick a project ("${raw}")`;
+    flags.project = `Not found – pick a project or leave empty ("${raw}")`;
     return { id: null, name: raw };
   }
   return { id: p.id, name: p.name };
 }
 
-/** Validate and resolve the LLM's answer against known projects/users/tasks. */
+/** Validate and resolve the LLM's answer against known projects / backlog items. */
 export function parseDraftResponse(input: string | unknown, ctx: DraftContext): DraftResult {
   const json = typeof input === "string" ? extractJson(input) : input;
   const top = rawResponse.safeParse(json);
-  if (!top.success) throw new DraftParseError("The AI reply did not match the expected task format.");
+  if (!top.success) throw new DraftParseError("The AI reply did not match the expected backlog format.");
 
   const warnings: string[] = [];
-  const creates: DraftTask[] = [];
+  const creates: DraftItem[] = [];
   const updates: DraftUpdate[] = [];
 
-  top.data.creates.slice(0, 50).forEach((item, idx) => {
-    const r = rawCreate.safeParse(item);
+  top.data.creates.slice(0, 50).forEach((entry, idx) => {
+    const r = rawCreate.safeParse(entry);
     if (!r.success || !r.data.title.trim()) {
       warnings.push(`Skipped draft #${idx + 1}: missing title.`);
       return;
@@ -221,120 +164,81 @@ export function parseDraftResponse(input: string | unknown, ctx: DraftContext): 
     const c = r.data;
     const flags: DraftFlags = {};
     const project = resolveProject(ctx, c.project, flags);
-    if (!project) flags.project = "Pick a project";
-    const assignee = resolveAssignee(ctx, c.assignee, flags);
-    const priority = normalizePriority(c.priority);
-    if (c.priority && !priority) flags.priority = `Unknown priority "${c.priority}"`;
     const status = normalizeStatus(c.status);
     if (c.status && !status) flags.status = `Unknown status "${c.status}"`;
-    const due = parseDate(c.dueDate ?? c.due_date);
-    if (due.flag) flags.dueDate = due.flag;
-
     creates.push({
       title: c.title.trim().slice(0, 200),
-      description: (c.description ?? "").trim(),
+      notes: (c.notes ?? c.description ?? "").trim(),
       projectId: project?.id ?? null,
       projectName: project?.name ?? null,
-      assigneeId: assignee?.id ?? null,
-      assigneeName: assignee?.name ?? null,
-      priority: priority ?? "MEDIUM",
-      status: status ?? "BACKLOG",
-      dueDate: due.value,
-      tags: parseTags(c.tags),
+      status: status ?? "IN_PROGRESS",
       flags,
     });
   });
 
-  top.data.updates.slice(0, 100).forEach((item, idx) => {
-    const r = rawUpdate.safeParse(item);
+  top.data.updates.slice(0, 100).forEach((entry, idx) => {
+    const r = rawUpdate.safeParse(entry);
     if (!r.success) {
       warnings.push(`Skipped update #${idx + 1}: invalid format.`);
       return;
     }
-    const task = ctx.tasks.find((t) => t.id === r.data.taskId);
-    if (!task) {
-      warnings.push(`Skipped update #${idx + 1}: task "${r.data.taskId}" not found.`);
+    const item = ctx.items.find((i) => i.id === r.data.itemId);
+    if (!item) {
+      warnings.push(`Skipped update #${idx + 1}: item "${r.data.itemId}" not found.`);
       return;
     }
     const ch = r.data.changes;
     const flags: DraftFlags = {};
-    const before: TaskFields = {};
-    const after: TaskFields = {};
-    const set = <K extends keyof TaskFields>(key: K, next: TaskFields[K], prev: TaskFields[K]) => {
+    const before: ItemFields = {};
+    const after: ItemFields = {};
+    const set = <K extends keyof ItemFields>(key: K, next: ItemFields[K], prev: ItemFields[K]) => {
       if (JSON.stringify(next) === JSON.stringify(prev)) return;
       before[key] = prev;
       after[key] = next;
     };
 
-    if (ch.title) set("title", ch.title.trim(), task.title);
-    if (ch.description !== undefined && ch.description !== null) set("description", ch.description, undefined);
+    if (ch.title) set("title", ch.title.trim().slice(0, 200), item.title);
+    if (ch.notes !== undefined && ch.notes !== null) set("notes", ch.notes, undefined);
     if (ch.status) {
       const s = normalizeStatus(ch.status);
-      if (s) set("status", s, task.status);
+      if (s) set("status", s, item.status);
       else flags.status = `Unknown status "${ch.status}"`;
     }
-    if (ch.priority) {
-      const p = normalizePriority(ch.priority);
-      if (p) set("priority", p, task.priority);
-      else flags.priority = `Unknown priority "${ch.priority}"`;
-    }
-    if (ch.assignee !== undefined) {
-      const a = resolveAssignee(ctx, ch.assignee, flags);
-      if (a && !flags.assignee) set("assigneeId", a.id, task.assigneeId);
-    }
-    if (ch.project) {
+    if (ch.project !== undefined) {
       const p = resolveProject(ctx, ch.project, flags);
-      if (p?.id) set("projectId", p.id, task.projectId);
+      if (p && !flags.project) set("projectId", p.id, item.projectId);
     }
-    const rawDue = ch.dueDate !== undefined ? ch.dueDate : ch.due_date;
-    if (rawDue !== undefined) {
-      const d = parseDate(rawDue);
-      if (d.flag) flags.dueDate = d.flag;
-      else set("dueDate", d.value, task.dueDate);
-    }
-    if (ch.tags !== undefined) set("tags", parseTags(ch.tags), task.tags);
 
     if (Object.keys(after).length === 0 && Object.keys(flags).length === 0) {
-      warnings.push(`No change needed for "${task.title}".`);
+      warnings.push(`No change needed for "${item.title}".`);
       return;
     }
-    updates.push({ taskId: task.id, taskTitle: task.title, before, after, flags });
+    updates.push({ itemId: item.id, itemTitle: item.title, before, after, flags });
   });
 
-  const message = top.data.message ?? undefined;
-  return { creates, updates, warnings, message: message || undefined };
+  if (!creates.length && !updates.length && !warnings.length) warnings.push("The AI didn't propose any changes.");
+  return { creates, updates, warnings, message: top.data.message ?? undefined };
 }
 
-// ---------- Prompt for the LLM ----------
+// ---------- Prompt ----------
 
 export function buildMessages(prompt: string, ctx: DraftContext) {
-  const userName = (id: string | null) => ctx.users.find((u) => u.id === id)?.name ?? null;
-  const projectName = (id: string) => ctx.projects.find((p) => p.id === id)?.name ?? "";
+  const projectName = (id: string | null) => ctx.projects.find((p) => p.id === id)?.name ?? null;
   const system = [
-    "You help the admin of a frontend team's backlog. Turn the admin's request into DRAFT task creations and/or updates.",
-    "Reply with ONE JSON object only, no prose, using exactly this shape:",
-    '{"creates":[{"title":string,"description":string,"project":string,"assignee":string|null,"priority":"LOW"|"MEDIUM"|"HIGH"|"URGENT","status":"BACKLOG"|"TODO"|"IN_PROGRESS"|"REVIEW"|"DONE","dueDate":"YYYY-MM-DD"|null,"tags":string[]}],',
-    ' "updates":[{"taskId":string,"changes":{"status"?:...,"priority"?:...,"assignee"?:string|null,"dueDate"?:"YYYY-MM-DD"|null,"title"?:string,"tags"?:string[],"project"?:string}}],',
+    "You turn a frontend team admin's request into backlog changes. The backlog is a simple list of notes-like records.",
+    "Reply with ONE JSON object only, no prose:",
+    '{"creates":[{"title":string,"notes":string,"project":string|null,"status":"IN_PROGRESS"|"HOLD"|"DONE"|"REJECT"}],',
+    ' "updates":[{"itemId":string,"changes":{"status"?:...,"title"?:string,"notes"?:string,"project"?:string|null}}],',
     ' "message":string}',
-    "Rules: use project and user names exactly as listed. Only reference taskIds from the task list. Use creates for new work and updates for changes to existing tasks.",
-    "Defaults when not specified: priority MEDIUM, status BACKLOG, assignee null, dueDate null. Keep titles short (under 80 chars) and specific to frontend work.",
-    "Never invent projects or users; if a name doesn't match, still write the name you were given so the admin can fix it.",
-    `Today is ${ctx.today}. Resolve relative dates against today.`,
+    "Rules: use project names exactly as listed; project is optional (null when the request doesn't name one). Only reference itemIds from the item list.",
+    "Use creates for new items and updates for changes to existing items. Default status IN_PROGRESS. Keep titles short (under 80 chars); put details in notes.",
+    "Never invent projects; if a name doesn't match, still write the name you were given so the admin can fix it.",
+    `Today is ${ctx.today}.`,
   ].join("\n");
   const context = {
     projects: ctx.projects.map((p) => p.name),
-    users: ctx.users.map((u) => u.name),
-    statuses: TASK_STATUSES,
-    priorities: TASK_PRIORITIES,
-    tasks: ctx.tasks.map((t) => ({
-      taskId: t.id,
-      title: t.title,
-      project: projectName(t.projectId),
-      assignee: userName(t.assigneeId),
-      status: t.status,
-      priority: t.priority,
-      dueDate: t.dueDate,
-    })),
+    statuses: BACKLOG_STATUSES,
+    items: ctx.items.map((i) => ({ itemId: i.id, title: i.title, project: projectName(i.projectId), status: i.status })),
   };
   return [
     { role: "system" as const, content: system },
@@ -346,46 +250,43 @@ export function buildMessages(prompt: string, ctx: DraftContext) {
 
 const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, a: 1, an: 1 };
 
+function findProject(p: string, ctx: DraftContext) {
+  const exact = ctx.projects.find((pr) => p.includes(pr.name.toLowerCase()));
+  if (exact) return exact;
+  // Score by whole-word overlap, e.g. "login page redesign" -> "Login Redesign".
+  const scored = ctx.projects
+    .map((pr) => ({
+      pr,
+      score: pr.name
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 3 && new RegExp(`\\b${w.replace(/[^a-z0-9]/g, "")}\\b`).test(p)).length,
+    }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.pr;
+}
+
 /** Produces an LLM-shaped JSON string from simple keyword rules, so the whole flow works without an API key. */
 export function mockLlmReply(prompt: string, ctx: DraftContext): string {
   const p = prompt.toLowerCase();
-  const findUser = () => ctx.users.find((u) => p.includes(u.name.toLowerCase()) || new RegExp(`\\b${u.name.split(" ")[0].toLowerCase()}\\b`).test(p));
-  const findProject = () => {
-    const exact = ctx.projects.find((pr) => p.includes(pr.name.toLowerCase()));
-    if (exact) return exact;
-    // Score by whole-word overlap, e.g. "login page redesign" -> "Login Redesign".
-    const scored = ctx.projects
-      .map((pr) => ({
-        pr,
-        score: pr.name
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((w) => w.length > 3 && new RegExp(`\\b${w.replace(/[^a-z0-9]/g, "")}\\b`).test(p)).length,
-      }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score);
-    return scored[0]?.pr;
-  };
-  const prio = TASK_PRIORITIES.find((x) => p.includes(x.toLowerCase()));
-  const user = findUser();
-  const project = findProject();
+  const project = findProject(p, ctx);
 
-  const moveMatch = p.match(/\b(?:move|mark|set|change)\b.*\bto\s+(backlog|to ?do|in ?progress|review|done)\b/);
+  // "Mark all Checkout Performance items as done", "move ... to hold"
+  const moveMatch = p.match(/\b(?:move|mark|set|change|put)\b.*\b(?:to|as|on)\s+(in ?progress|on ?hold|hold|done|rejected|reject)\b/);
   if (moveMatch) {
     const status = normalizeStatus(moveMatch[1]);
-    const matches = ctx.tasks.filter(
-      (t) => (!user || t.assigneeId === user.id) && (!project || t.projectId === project.id) && t.status !== status,
-    );
+    const matches = ctx.items.filter((i) => (!project || i.projectId === project.id) && i.status !== status);
     return JSON.stringify({
       creates: [],
-      updates: matches.slice(0, 10).map((t) => ({ taskId: t.id, changes: { status } })),
-      message: `Mock AI: proposing ${matches.length} status change(s).`,
+      updates: matches.slice(0, 10).map((i) => ({ itemId: i.id, changes: { status } })),
+      message: `Mock AI: proposing ${Math.min(10, matches.length)} status change(s).`,
     });
   }
 
-  const countMatch = p.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+(?:new\s+)?tasks?\b/);
+  const countMatch = p.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+(?:new\s+)?(?:items?|notes?|tasks?|entries|backlog items?)\b/);
   const count = Math.min(10, Math.max(1, countMatch ? Number(countMatch[1]) || WORDS[countMatch[1]] || 1 : 1));
-  const forMatch = prompt.match(/\bfor (?:the )?(.+?)(?:,|\.|$| with | assign)/i);
+  const forMatch = prompt.match(/\b(?:for|about) (?:the )?(.+?)(?:,|\.|$| with | in )/i);
   const topic = (forMatch?.[1] ?? project?.name ?? "frontend").trim();
   const ideas = [
     "Build the main layout",
@@ -399,19 +300,15 @@ export function mockLlmReply(prompt: string, ctx: DraftContext): string {
     "Review performance (Lighthouse)",
     "Update docs",
   ];
-  const assigneeWord = prompt.match(/assign(?:ed)? to ([A-Za-z]+(?: [A-Za-z]+)?)/i)?.[1];
+  const status = p.includes("on hold") ? "HOLD" : "IN_PROGRESS";
   return JSON.stringify({
     creates: Array.from({ length: count }, (_, i) => ({
       title: `${ideas[i % ideas.length]} – ${topic}`,
-      description: `Drafted by the mock AI from: "${prompt}"`,
-      project: project?.name ?? topic,
-      assignee: user?.name ?? assigneeWord ?? null,
-      priority: prio ?? "MEDIUM",
-      status: "BACKLOG",
-      dueDate: null,
-      tags: ["ai-draft"],
+      notes: `Drafted by the mock AI from: "${prompt}"`,
+      project: project?.name ?? (forMatch ? topic : null),
+      status,
     })),
     updates: [],
-    message: `Mock AI: drafted ${count} task(s).`,
+    message: `Mock AI: drafted ${count} item(s).`,
   });
 }

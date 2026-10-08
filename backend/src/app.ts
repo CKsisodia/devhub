@@ -5,10 +5,12 @@ import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import { config } from "./config.js";
 import { HttpError, forbidden } from "./lib/errors.js";
+import { authRouter } from "./auth/routes.js";
+import { sessionAuthenticate } from "./auth/middleware.js";
 import { meRouter } from "./routes/me.js";
 import { usersRouter } from "./routes/users.js";
 import { dashboardRouter } from "./routes/dashboard.js";
-import { tasksRouter } from "./routes/tasks.js";
+import { backlogRouter } from "./routes/backlog.js";
 import { aiRouter } from "./routes/ai.js";
 import { projectsRouter } from "./routes/projects.js";
 import { learningRouter } from "./routes/learning.js";
@@ -20,7 +22,7 @@ export const apiMounts: [string, Router][] = [
   ["/me", meRouter],
   ["/users", usersRouter],
   ["/dashboard", dashboardRouter],
-  ["/tasks", tasksRouter],
+  ["/backlog", backlogRouter],
   ["/ai", aiRouter],
   ["/projects", projectsRouter],
   ["/learning", learningRouter],
@@ -31,11 +33,31 @@ export const apiMounts: [string, Router][] = [
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**
- * Defence in depth: viewers are read-only everywhere, so any mutating request from a non-admin is
- * rejected before it reaches a route. Each mutating route is additionally wrapped in requireAdmin.
+ * The ONLY mutations a viewer may make (product decision, requirements v1.2): changing a backlog item's
+ * status. Everything else that writes is admin-only.
+ */
+export const VIEWER_ALLOWED_MUTATIONS: { method: string; pattern: RegExp }[] = [{ method: "PATCH", pattern: /^\/backlog\/[^/]+\/status\/?$/ }];
+
+/**
+ * Defence in depth: viewers are read-only everywhere except the allow-list above, so any other mutating
+ * request from a non-admin is rejected before it reaches a route. Admin-only routes are additionally
+ * wrapped in requireAdmin.
  */
 export const readOnlyForViewers: RequestHandler = (req, _res, next) => {
-  if (!SAFE_METHODS.has(req.method) && req.user?.role !== "admin") return next(forbidden());
+  if (SAFE_METHODS.has(req.method) || req.user?.role === "admin") return next();
+  if (VIEWER_ALLOWED_MUTATIONS.some((m) => m.method === req.method && m.pattern.test(req.path))) return next();
+  next(forbidden());
+};
+
+/**
+ * CSRF defence in depth (on top of SameSite=Lax cookies): browsers send Origin on cross-site mutating
+ * requests, so reject any whose Origin isn't the frontend (or an explicitly allowed origin).
+ */
+export const sameOriginForMutations: RequestHandler = (req, _res, next) => {
+  const origin = req.header("origin");
+  if (SAFE_METHODS.has(req.method) || !origin) return next();
+  const allowed = new Set([config.websiteDomain, ...config.corsOrigins, `${req.protocol}://${req.get("host")}`]);
+  if (!allowed.has(origin)) return next(new HttpError(403, "Cross-site request blocked."));
   next();
 };
 
@@ -61,40 +83,29 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 };
 
 export interface AppOptions {
-  /** Sets req.user or fails with 401. Production uses SuperTokens; tests inject a fake. */
-  authenticate: RequestHandler;
-  /** Extra middleware mounted before the API (SuperTokens auth routes). */
-  before?: RequestHandler[];
-  /** Extra error handlers (SuperTokens). */
-  errorHandlers?: ErrorRequestHandler[];
-  corsAllowedHeaders?: string[];
+  /** Sets req.user or fails with 401. Defaults to the session cookie; tests inject a fake. */
+  authenticate?: RequestHandler;
 }
 
-export function createApp(opts: AppOptions) {
+export function createApp(opts: AppOptions = {}) {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", true);
 
-  app.use(
-    cors({
-      origin: [config.websiteDomain, ...config.corsOrigins],
-      credentials: true,
-      allowedHeaders: ["content-type", ...(opts.corsAllowedHeaders ?? [])],
-    }),
-  );
-  for (const mw of opts.before ?? []) app.use(mw);
+  app.use(cors({ origin: [config.websiteDomain, ...config.corsOrigins], credentials: true, allowedHeaders: ["content-type"] }));
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
   app.use(express.json({ limit: "1mb" }));
+  app.use("/api", sameOriginForMutations);
+  app.use("/api/auth", authRouter);
 
   const api = express.Router();
-  api.use(opts.authenticate);
+  api.use(opts.authenticate ?? sessionAuthenticate);
   api.use(readOnlyForViewers);
   for (const [path, router] of apiMounts) api.use(path, router);
   api.use((_req, res) => res.status(404).json({ error: "Not found" }));
   app.use("/api", api);
 
-  for (const eh of opts.errorHandlers ?? []) app.use(eh);
   app.use(errorHandler);
   return app;
 }

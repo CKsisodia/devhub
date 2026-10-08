@@ -3,7 +3,7 @@ export type RoleName = "admin" | "viewer";
 export interface AuthUser {
   id: string;
   name: string;
-  phoneNumber: string;
+  email: string;
   role: RoleName;
 }
 

@@ -5,8 +5,8 @@ import { twMerge } from "tailwind-merge";
 import { Loader2, X, type LucideIcon } from "lucide-react";
 import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
-import { initials, PRIORITY_LABEL, PRIORITY_STYLE, PROJECT_STATUS_LABEL, PROJECT_STATUS_STYLE, STATUS_LABEL, STATUS_STYLE } from "@/lib/format";
-import type { ProjectStatus, TaskPriority, TaskStatus } from "@/lib/types";
+import { initials, PROJECT_STATUS_LABEL, PROJECT_STATUS_STYLE, STATUS_LABEL, STATUS_STYLE } from "@/lib/format";
+import type { BacklogStatus, ProjectStatus } from "@/lib/types";
 
 export const cn = (...inputs: ClassValue[]) => twMerge(clsx(inputs));
 
@@ -106,22 +106,8 @@ export function Pill({ bg, text, dot, children, className }: { bg: string; text:
   );
 }
 
-export const StatusPill = ({ status }: { status: TaskStatus }) => <Pill {...STATUS_STYLE[status]}>{STATUS_LABEL[status]}</Pill>;
+export const StatusPill = ({ status }: { status: BacklogStatus }) => <Pill {...STATUS_STYLE[status]}>{STATUS_LABEL[status]}</Pill>;
 export const ProjectStatusPill = ({ status }: { status: ProjectStatus }) => <Pill {...PROJECT_STATUS_STYLE[status]}>{PROJECT_STATUS_LABEL[status]}</Pill>;
-
-export function PriorityBadge({ priority }: { priority: TaskPriority }) {
-  const s = PRIORITY_STYLE[priority];
-  return (
-    <span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs font-medium" style={{ background: s.bg, color: s.text }}>
-      <span className="flex h-2.5 items-end gap-[2px]" aria-hidden>
-        {[1, 2, 3, 4].map((i) => (
-          <span key={i} className="w-[2px] rounded-full" style={{ height: `${i * 25}%`, background: s.text, opacity: i <= s.bars ? 1 : 0.25 }} />
-        ))}
-      </span>
-      {PRIORITY_LABEL[priority]}
-    </span>
-  );
-}
 
 export function Chip({ children, selected, onClick, onRemove, className }: { children: ReactNode; selected?: boolean; onClick?: () => void; onRemove?: () => void; className?: string }) {
   const Comp = onClick ? "button" : "span";
@@ -287,20 +273,6 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
           <div className="overflow-y-auto px-6 py-3">{children}</div>
           {footer && <div className="flex justify-end gap-2 px-6 pb-5 pt-3">{footer}</div>}
         </div>
-      </div>
-    </Portal>
-  );
-}
-
-export function Drawer({ open, onClose, children, label }: { open: boolean; onClose: () => void; children: ReactNode; label: string }) {
-  useEscape(onClose, open);
-  if (!open) return null;
-  return (
-    <Portal>
-      <div className="fixed inset-0 z-50 bg-[rgba(9,9,11,0.32)]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-        <aside role="dialog" aria-modal="true" aria-label={label} className="glass animate-in absolute inset-y-0 right-0 flex w-full flex-col shadow-lg min-[900px]:w-[480px] min-[900px]:rounded-l-xl">
-          {children}
-        </aside>
       </div>
     </Portal>
   );
