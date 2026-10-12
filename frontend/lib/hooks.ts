@@ -23,7 +23,7 @@ export function useProjects() {
   return useSWR<ProjectSummary[]>("/api/projects", fetcher);
 }
 
-/** Revalidate every cached list that depends on backlog items (backlog, dashboard, projects). */
-export function refreshBacklogData() {
-  return mutate((key) => typeof key === "string" && /^\/api\/(backlog|dashboard|projects)/.test(key));
+/** Revalidate every cached list that depends on work items (the four sections, dashboard, projects). */
+export function refreshWorkData() {
+  return mutate((key) => typeof key === "string" && /^\/api\/(tasks|roadmap|rnd|poc|dashboard|projects)/.test(key));
 }

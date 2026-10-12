@@ -40,6 +40,7 @@
 html,
 body {
   background: var(--color-canvas);
+  overflow-x: hidden;
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-feature-settings: "cv11", "ss01";
@@ -78,7 +79,55 @@ body {
   }
 }
 
-/* AI "generating" shimmer along the border */
+/* ---------- Motion + surfaces (v1.3 UI upgrade) ----------
+   Palette and tone stay the design brief's: neutral zinc surfaces, one violet → indigo → blue accent
+   reserved for AI and the primary action. Everything animated here is switched off for
+   prefers-reduced-motion at the bottom of this block. */
+
+/* Rotating angle for conic gradient borders */
+@property --ai-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes ai-spin {
+  to { --ai-angle: 360deg; }
+}
+
+/* Frosted card surface: translucent white over the aurora, hairline border, soft layered shadow.
+   Fill stays >= 72% white so body text keeps AA contrast over any background. */
+.glass-card {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(228, 228, 231, 0.75);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  @apply backdrop-blur-[14px];
+}
+.lift {
+  transition: transform 180ms var(--ease-out-soft), box-shadow 180ms var(--ease-out-soft), border-color 180ms var(--ease-out-soft);
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 16px 32px -16px rgba(79, 70, 229, 0.22);
+  border-color: rgba(196, 181, 253, 0.7);
+}
+
+/* Animated gradient border for AI elements (rotating conic gradient on the border box) */
+.ai-border-animated {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--ai-fill, #fff), var(--ai-fill, #fff)) padding-box,
+    conic-gradient(from var(--ai-angle), #7c3aed, #4f46e5, #2563eb, #a78bfa, #7c3aed) border-box;
+  animation: ai-spin 6s linear infinite;
+}
+.ai-border-animated.is-thinking {
+  animation-duration: 1.4s;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.08), 0 10px 40px -8px rgba(79, 70, 229, 0.45);
+}
+.ai-glow {
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.18), 0 12px 36px -10px rgba(79, 70, 229, 0.35);
+}
+
+/* Legacy shimmer used while generating */
 @keyframes ai-shimmer {
   0% { background-position: 0% 50%; }
   100% { background-position: 200% 50%; }
@@ -91,16 +140,97 @@ body {
   background-size: 100% 100%, 200% 100%;
   animation: ai-shimmer 1.5s linear infinite;
 }
+/* Gradient text sweep ("Thinking…") */
+.text-ai-shimmer {
+  background-image: linear-gradient(90deg, #7c3aed 0%, #4f46e5 30%, #a78bfa 50%, #4f46e5 70%, #7c3aed 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 1.6s linear infinite;
+}
 
-@keyframes skeleton {
-  0% { background-position: -200px 0; }
-  100% { background-position: calc(200px + 100%) 0; }
+/* Skeleton: neutral base with a soft light sweep */
+@keyframes skeleton-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
 }
 .skeleton {
-  background: linear-gradient(90deg, #f4f4f5 0px, #ececee 40px, #f4f4f5 80px);
-  background-size: 200px 100%;
-  animation: skeleton 1.2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+  background: rgba(228, 228, 231, 0.55);
   border-radius: 6px;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  animation: skeleton-sweep 1.3s ease-in-out infinite;
+}
+.skeleton-ai {
+  background: rgba(221, 214, 254, 0.45);
+}
+
+/* Aurora background accents: pre-blurred radial gradients drifting slowly (transform only = cheap) */
+@keyframes aurora-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6vw, 4vh, 0) scale(1.08); }
+}
+@keyframes aurora-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-5vw, 6vh, 0) scale(0.95); }
+}
+@keyframes aurora-c {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(4vw, -5vh, 0); }
+}
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  will-change: transform;
+}
+.aurora-a { animation: aurora-a 22s ease-in-out infinite; background: radial-gradient(closest-side, rgba(167, 139, 250, 0.32), transparent); }
+.aurora-b { animation: aurora-b 28s ease-in-out infinite; background: radial-gradient(closest-side, rgba(96, 165, 250, 0.24), transparent); }
+.aurora-c { animation: aurora-c 34s ease-in-out infinite; background: radial-gradient(closest-side, rgba(129, 140, 248, 0.22), transparent); }
+.aurora-grid {
+  background-image: radial-gradient(rgba(24, 24, 27, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse at top, black 0%, transparent 70%);
+}
+
+/* Status dot pulse (In progress) */
+@keyframes dot-pulse {
+  0% { box-shadow: 0 0 0 0 var(--dot, rgba(245, 158, 11, 0.55)); }
+  70% { box-shadow: 0 0 0 5px rgba(0, 0, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+.dot-pulse {
+  animation: dot-pulse 1.8s ease-out infinite;
+}
+
+/* Gentle float for empty-state illustrations */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* Blinking caret for the streaming reveal */
+@keyframes caret {
+  50% { opacity: 0; }
+}
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: #7c3aed;
+  animation: caret 0.9s steps(1) infinite;
 }
 
 @keyframes fade-in-up {
@@ -121,7 +251,11 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-generating, .skeleton, .animate-in, .animate-shake { animation: none !important; }
+  .ai-generating, .animate-in, .animate-shake, .ai-border-animated, .text-ai-shimmer, .aurora-blob, .dot-pulse, .animate-float, .caret::after, .skeleton::after {
+    animation: none !important;
+  }
+  .lift:hover { transform: none; }
+  .text-ai-shimmer { color: #6d28d9; background: none; }
 }
 
 /* Markdown reader */

@@ -1,24 +1,39 @@
 /**
- * AI backlog entry: turning the LLM's JSON answer into a validated, editable draft.
- * Pure functions (no DB / network) so they are easy to unit-test.
+ * AI entry for the work sections (Tasks, Roadmap, R&D, POC): turning the LLM's JSON answer into a
+ * validated, editable draft. Pure functions (no DB / network) so they are easy to unit-test.
  */
 import { z } from "zod";
-import { BACKLOG_STATUSES } from "./schemas.js";
+import { OUTCOME_LABEL, PERIOD_RE, POC_OUTCOMES, WORK_STATUSES, WORK_TYPE_META, type ExtraField, type PocOutcome, type WorkStatus, type WorkType } from "./workTypes.js";
 
-export type Status = (typeof BACKLOG_STATUSES)[number];
+export type Status = WorkStatus;
+
+/** Type-specific fields (only those of the section are ever filled in). */
+export interface ExtraFields {
+  targetPeriod?: string | null;
+  goal?: string;
+  timeboxEnd?: string | null;
+  findings?: string;
+  outcome?: PocOutcome | null;
+}
 
 export interface DraftContext {
   today: string; // YYYY-MM-DD
+  /** Section the drafts are for. Defaults to TASK. */
+  type?: WorkType;
   projects: { id: string; name: string }[];
-  items: { id: string; title: string; projectId: string | null; status: Status }[];
+  /** Existing items of this section (for updates). */
+  items: ({ id: string; title: string; projectId: string | null; status: Status } & ExtraFields)[];
 }
 
 export interface DraftFlags {
   project?: string;
   status?: string;
+  targetPeriod?: string;
+  timeboxEnd?: string;
+  outcome?: string;
 }
 
-export interface DraftItem {
+export interface DraftItem extends ExtraFields {
   title: string;
   notes: string;
   projectId: string | null;
@@ -27,7 +42,7 @@ export interface DraftItem {
   flags: DraftFlags;
 }
 
-export interface ItemFields {
+export interface ItemFields extends ExtraFields {
   title?: string;
   notes?: string;
   projectId?: string | null;
@@ -43,6 +58,7 @@ export interface DraftUpdate {
 }
 
 export interface DraftResult {
+  type: WorkType;
   creates: DraftItem[];
   updates: DraftUpdate[];
   warnings: string[];
@@ -54,16 +70,28 @@ export interface DraftResult {
 const looseStr = z.union([z.string(), z.number()]).transform(String);
 const optStr = z.union([looseStr, z.null()]).optional();
 
-const rawCreate = z.object({ title: looseStr, notes: optStr, description: optStr, project: optStr, status: optStr });
-const rawUpdate = z.object({
-  itemId: looseStr,
-  changes: z.object({ title: optStr, notes: optStr, project: optStr, status: optStr }).partial(),
-});
+const rawFields = {
+  title: optStr,
+  notes: optStr,
+  description: optStr,
+  project: optStr,
+  status: optStr,
+  targetPeriod: optStr,
+  target: optStr,
+  goal: optStr,
+  timeboxEnd: optStr,
+  timebox: optStr,
+  findings: optStr,
+  outcome: optStr,
+};
+const rawCreate = z.object({ ...rawFields, title: looseStr });
+const rawUpdate = z.object({ itemId: looseStr, changes: z.object(rawFields).partial() });
 const rawResponse = z.object({
   creates: z.array(z.unknown()).optional().default([]),
   updates: z.array(z.unknown()).optional().default([]),
   message: optStr,
 });
+type RawFields = z.infer<typeof rawUpdate>["changes"];
 
 export class DraftParseError extends Error {}
 
@@ -82,15 +110,22 @@ export function extractJson(text: string): unknown {
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const squash = (s: string) => norm(s).replace(/ /g, "");
 
 const STATUS_WORDS: Record<string, Status> = {
+  todo: "TODO",
+  backlog: "TODO",
+  planned: "TODO",
+  notstarted: "TODO",
+  new: "TODO",
+  next: "TODO",
+  queued: "TODO",
+  open: "TODO",
   inprogress: "IN_PROGRESS",
   progress: "IN_PROGRESS",
   doing: "IN_PROGRESS",
   wip: "IN_PROGRESS",
   active: "IN_PROGRESS",
-  open: "IN_PROGRESS",
-  todo: "IN_PROGRESS",
   started: "IN_PROGRESS",
   hold: "HOLD",
   onhold: "HOLD",
@@ -103,6 +138,7 @@ const STATUS_WORDS: Record<string, Status> = {
   complete: "DONE",
   finished: "DONE",
   closed: "DONE",
+  shipped: "DONE",
   reject: "REJECT",
   rejected: "REJECT",
   wontdo: "REJECT",
@@ -112,10 +148,62 @@ const STATUS_WORDS: Record<string, Status> = {
   dropped: "REJECT",
 };
 
-/** Maps spellings like "In Progress", "on hold", "rejected", "IN_PROGRESS" to a status. */
+/** Maps spellings like "To do", "In Progress", "on hold", "rejected", "IN_PROGRESS" to a status. */
 export function normalizeStatus(v: string | null | undefined): Status | null {
   if (!v) return null;
-  return STATUS_WORDS[norm(v).replace(/ /g, "")] ?? null;
+  return STATUS_WORDS[squash(v)] ?? null;
+}
+
+const OUTCOME_WORDS: Record<string, PocOutcome> = {
+  adopt: "ADOPT",
+  adopted: "ADOPT",
+  go: "ADOPT",
+  yes: "ADOPT",
+  drop: "DROP",
+  dropped: "DROP",
+  nogo: "DROP",
+  no: "DROP",
+  needsmorework: "NEEDS_MORE_WORK",
+  moreworkneeded: "NEEDS_MORE_WORK",
+  morework: "NEEDS_MORE_WORK",
+  inconclusive: "NEEDS_MORE_WORK",
+  unclear: "NEEDS_MORE_WORK",
+};
+
+/** POC outcome: "Adopt" / "Drop" / "Needs more work" (and a few synonyms). */
+export function normalizeOutcome(v: string | null | undefined): PocOutcome | null {
+  if (!v) return null;
+  return OUTCOME_WORDS[squash(v)] ?? null;
+}
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * Roadmap target period -> "YYYY-MM" or "YYYY-Qn". Accepts "2026-Q4", "Q4 2026", "Q4" (this year),
+ * "2026-11", "Nov 2026", "November 2026", "11/2026". Returns null when it can't tell.
+ */
+export function normalizePeriod(v: string | null | undefined, today: string): string | null {
+  if (!v) return null;
+  const s = v.trim().toLowerCase();
+  if (PERIOD_RE.test(v.trim().toUpperCase())) return v.trim().toUpperCase();
+  const year = Number(today.slice(0, 4));
+  const q = s.match(/^(?:(\d{4})\s*[- ]?\s*)?q([1-4])(?:\s*[- ]?\s*(\d{4}))?$/);
+  if (q) return `${q[1] ?? q[3] ?? year}-Q${q[2]}`;
+  const num = s.match(/^(\d{1,2})\s*\/\s*(\d{4})$/);
+  if (num && Number(num[1]) >= 1 && Number(num[1]) <= 12) return `${num[2]}-${num[1].padStart(2, "0")}`;
+  const named = s.match(/^([a-z]+)\.?\s*(\d{4})?$/);
+  if (named) {
+    const m = MONTHS.indexOf(named[1].slice(0, 3));
+    if (m >= 0 && (named[1].length === 3 || named[1].startsWith(MONTHS[m]))) return `${named[2] ?? year}-${String(m + 1).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+/** YYYY-MM-DD only (the LLM is told today's date and asked for ISO dates). */
+export function normalizeDate(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const s = v.trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) ? s : null;
 }
 
 /** Case-insensitive match: exact name, then unique prefix / first word, then unique substring. */
@@ -145,11 +233,51 @@ function resolveProject(ctx: DraftContext, raw: string | null | undefined, flags
   return { id: p.id, name: p.name };
 }
 
-/** Validate and resolve the LLM's answer against known projects / backlog items. */
+/**
+ * Reads the type-specific fields the section uses (others are ignored). Only fields present in `raw` are
+ * returned; invalid values are flagged and left out.
+ */
+function parseExtras(type: WorkType, raw: RawFields, ctx: DraftContext, flags: DraftFlags): ExtraFields {
+  const allowed = new Set<ExtraField>(WORK_TYPE_META[type].extras);
+  const out: ExtraFields = {};
+  const period = raw.targetPeriod !== undefined ? raw.targetPeriod : raw.target;
+  if (allowed.has("targetPeriod") && period !== undefined) {
+    const p = period === null ? null : normalizePeriod(period, ctx.today);
+    if (period !== null && !p) flags.targetPeriod = `Couldn't read "${period}" – pick a month or quarter`;
+    else out.targetPeriod = p;
+  }
+  if (allowed.has("goal") && raw.goal !== undefined) out.goal = (raw.goal ?? "").trim();
+  if (allowed.has("findings") && raw.findings !== undefined) out.findings = (raw.findings ?? "").trim();
+  const timebox = raw.timeboxEnd !== undefined ? raw.timeboxEnd : raw.timebox;
+  if (allowed.has("timeboxEnd") && timebox !== undefined) {
+    const d = timebox === null ? null : normalizeDate(timebox);
+    if (timebox !== null && !d) flags.timeboxEnd = `Couldn't read date "${timebox}"`;
+    else out.timeboxEnd = d;
+  }
+  if (allowed.has("outcome") && raw.outcome !== undefined) {
+    const o = raw.outcome === null ? null : normalizeOutcome(raw.outcome);
+    if (raw.outcome !== null && !o) flags.outcome = `Unknown outcome "${raw.outcome}" (use ${POC_OUTCOMES.map((x) => OUTCOME_LABEL[x]).join(" / ")})`;
+    else out.outcome = o;
+  }
+  return out;
+}
+
+/** Empty values for the section's type-specific fields (so every create draft has them all). */
+function emptyExtras(type: WorkType): ExtraFields {
+  const e: ExtraFields = {};
+  for (const f of WORK_TYPE_META[type].extras) {
+    if (f === "goal" || f === "findings") e[f] = "";
+    else e[f] = null;
+  }
+  return e;
+}
+
+/** Validate and resolve the LLM's answer against known projects / items of the section. */
 export function parseDraftResponse(input: string | unknown, ctx: DraftContext): DraftResult {
+  const type = ctx.type ?? "TASK";
   const json = typeof input === "string" ? extractJson(input) : input;
   const top = rawResponse.safeParse(json);
-  if (!top.success) throw new DraftParseError("The AI reply did not match the expected backlog format.");
+  if (!top.success) throw new DraftParseError("The AI reply did not match the expected format.");
 
   const warnings: string[] = [];
   const creates: DraftItem[] = [];
@@ -171,7 +299,9 @@ export function parseDraftResponse(input: string | unknown, ctx: DraftContext): 
       notes: (c.notes ?? c.description ?? "").trim(),
       projectId: project?.id ?? null,
       projectName: project?.name ?? null,
-      status: status ?? "IN_PROGRESS",
+      status: status ?? "TODO",
+      ...emptyExtras(type),
+      ...parseExtras(type, c, ctx, flags),
       flags,
     });
   });
@@ -208,6 +338,8 @@ export function parseDraftResponse(input: string | unknown, ctx: DraftContext): 
       const p = resolveProject(ctx, ch.project, flags);
       if (p && !flags.project) set("projectId", p.id, item.projectId);
     }
+    const extras = parseExtras(type, ch, ctx, flags);
+    for (const k of Object.keys(extras) as (keyof ExtraFields)[]) set(k, extras[k], item[k] ?? (k === "goal" || k === "findings" ? "" : null));
 
     if (Object.keys(after).length === 0 && Object.keys(flags).length === 0) {
       warnings.push(`No change needed for "${item.title}".`);
@@ -217,27 +349,47 @@ export function parseDraftResponse(input: string | unknown, ctx: DraftContext): 
   });
 
   if (!creates.length && !updates.length && !warnings.length) warnings.push("The AI didn't propose any changes.");
-  return { creates, updates, warnings, message: top.data.message ?? undefined };
+  return { type, creates, updates, warnings, message: top.data.message ?? undefined };
 }
 
 // ---------- Prompt ----------
 
+const SECTION_HELP: Record<WorkType, { what: string; fields: string }> = {
+  TASK: { what: "Tasks: a simple list of notes-like work items.", fields: "" },
+  ROADMAP: {
+    what: "Roadmap: planned frontend initiatives, each with a target period.",
+    fields: ',"targetPeriod":"YYYY-MM" (month) or "YYYY-Qn" (quarter) or null',
+  },
+  RND: {
+    what: "R&D: time-boxed research items.",
+    fields: ',"goal":string,"timeboxEnd":"YYYY-MM-DD" or null,"findings":string',
+  },
+  POC: {
+    what: "POC: time-boxed proofs of concept.",
+    fields: ',"goal":string,"timeboxEnd":"YYYY-MM-DD" or null,"findings":string,"outcome":"ADOPT"|"DROP"|"NEEDS_MORE_WORK"|null',
+  },
+};
+
 export function buildMessages(prompt: string, ctx: DraftContext) {
+  const type = ctx.type ?? "TASK";
+  const help = SECTION_HELP[type];
   const projectName = (id: string | null) => ctx.projects.find((p) => p.id === id)?.name ?? null;
+  const statuses = WORK_STATUSES.map((s) => `"${s}"`).join("|");
   const system = [
-    "You turn a frontend team admin's request into backlog changes. The backlog is a simple list of notes-like records.",
+    `You turn a frontend team admin's request into changes to the "${WORK_TYPE_META[type].label}" section. ${help.what}`,
     "Reply with ONE JSON object only, no prose:",
-    '{"creates":[{"title":string,"notes":string,"project":string|null,"status":"IN_PROGRESS"|"HOLD"|"DONE"|"REJECT"}],',
-    ' "updates":[{"itemId":string,"changes":{"status"?:...,"title"?:string,"notes"?:string,"project"?:string|null}}],',
+    `{"creates":[{"title":string,"notes":string,"project":string|null,"status":${statuses}${help.fields}}],`,
+    ` "updates":[{"itemId":string,"changes":{ any of the create fields }}],`,
     ' "message":string}',
     "Rules: use project names exactly as listed; project is optional (null when the request doesn't name one). Only reference itemIds from the item list.",
-    "Use creates for new items and updates for changes to existing items. Default status IN_PROGRESS. Keep titles short (under 80 chars); put details in notes.",
-    "Never invent projects; if a name doesn't match, still write the name you were given so the admin can fix it.",
+    "Use creates for new items and updates for changes to existing items. Default status TODO. Keep titles short (under 80 chars); put details in notes.",
+    "Never invent projects; if a name doesn't match, still write the name you were given so the admin can fix it. Leave fields you weren't told about empty.",
     `Today is ${ctx.today}.`,
   ].join("\n");
   const context = {
+    section: WORK_TYPE_META[type].label,
     projects: ctx.projects.map((p) => p.name),
-    statuses: BACKLOG_STATUSES,
+    statuses: WORK_STATUSES,
     items: ctx.items.map((i) => ({ itemId: i.id, title: i.title, project: projectName(i.projectId), status: i.status })),
   };
   return [
@@ -249,6 +401,24 @@ export function buildMessages(prompt: string, ctx: DraftContext) {
 // ---------- Deterministic mock (dev only, clearly labelled in the UI) ----------
 
 const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, a: 1, an: 1 };
+
+const IDEAS: Record<WorkType, string[]> = {
+  TASK: [
+    "Build the main layout",
+    "Implement form validation",
+    "Add loading and error states",
+    "Write unit tests",
+    "Check accessibility (keyboard + screen reader)",
+    "Make it responsive on mobile",
+    "Polish copy and empty states",
+    "Add analytics events",
+    "Review performance (Lighthouse)",
+    "Update docs",
+  ],
+  ROADMAP: ["Ship", "Roll out", "Migrate to", "Launch", "Deprecate the old version of", "Measure adoption of"],
+  RND: ["Research", "Compare options for", "Benchmark", "Survey the team about", "Read up on"],
+  POC: ["Prototype", "Spike", "Build a throwaway demo of", "Try out", "Test drive"],
+};
 
 function findProject(p: string, ctx: DraftContext) {
   const exact = ctx.projects.find((pr) => p.includes(pr.name.toLowerCase()));
@@ -267,13 +437,21 @@ function findProject(p: string, ctx: DraftContext) {
   return scored[0]?.pr;
 }
 
+const addDays = (ymd: string, days: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+function nextQuarter(today: string) {
+  const y = Number(today.slice(0, 4));
+  const q = Math.floor((Number(today.slice(5, 7)) - 1) / 3) + 1;
+  return q === 4 ? `${y + 1}-Q1` : `${y}-Q${q + 1}`;
+}
+
 /** Produces an LLM-shaped JSON string from simple keyword rules, so the whole flow works without an API key. */
 export function mockLlmReply(prompt: string, ctx: DraftContext): string {
+  const type = ctx.type ?? "TASK";
   const p = prompt.toLowerCase();
   const project = findProject(p, ctx);
 
   // "Mark all Checkout Performance items as done", "move ... to hold"
-  const moveMatch = p.match(/\b(?:move|mark|set|change|put)\b.*\b(?:to|as|on)\s+(in ?progress|on ?hold|hold|done|rejected|reject)\b/);
+  const moveMatch = p.match(/\b(?:move|mark|set|change|put)\b.*\b(?:to|as|on|back to)\s+(to ?do|in ?progress|on ?hold|hold|done|rejected|reject)\b/);
   if (moveMatch) {
     const status = normalizeStatus(moveMatch[1]);
     const matches = ctx.items.filter((i) => (!project || i.projectId === project.id) && i.status !== status);
@@ -284,31 +462,38 @@ export function mockLlmReply(prompt: string, ctx: DraftContext): string {
     });
   }
 
-  const countMatch = p.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+(?:new\s+)?(?:items?|notes?|tasks?|entries|backlog items?)\b/);
+  const countMatch = p.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+(?:new\s+)?(?:items?|notes?|tasks?|entries|ideas?|milestones?|initiatives?|experiments?|spikes?|pocs?|research items?|r&d items?|roadmap items?|backlog items?)\b/);
   const count = Math.min(10, Math.max(1, countMatch ? Number(countMatch[1]) || WORDS[countMatch[1]] || 1 : 1));
-  const forMatch = prompt.match(/\b(?:for|about) (?:the )?(.+?)(?:,|\.|$| with | in )/i);
+  const forMatch = prompt.match(/\b(?:for|about|on) (?:the )?(.+?)(?:,|\.|$| with | in | by | due | until )/i);
   const topic = (forMatch?.[1] ?? project?.name ?? "frontend").trim();
-  const ideas = [
-    "Build the main layout",
-    "Implement form validation",
-    "Add loading and error states",
-    "Write unit tests",
-    "Check accessibility (keyboard + screen reader)",
-    "Make it responsive on mobile",
-    "Polish copy and empty states",
-    "Add analytics events",
-    "Review performance (Lighthouse)",
-    "Update docs",
-  ];
-  const status = p.includes("on hold") ? "HOLD" : "IN_PROGRESS";
+  const ideas = IDEAS[type];
+  const status = p.includes("on hold") ? "HOLD" : p.includes("in progress") ? "IN_PROGRESS" : "TODO";
+  const period = prompt.match(/\bq[1-4](?:\s+\d{4})?\b|\b\d{4}-q[1-4]\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4}\b/i)?.[0];
+  const weeks = Number(p.match(/\b(\d+)\s*weeks?\b/)?.[1] ?? 2);
+
+  const extrasFor = (i: number): Record<string, unknown> => {
+    if (type === "ROADMAP") return { targetPeriod: period ?? nextQuarter(ctx.today) };
+    if (type === "RND" || type === "POC")
+      return {
+        goal: `Find out whether ${topic} is worth it for us (${i + 1}/${count}).`,
+        timeboxEnd: addDays(ctx.today, weeks * 7),
+        findings: "",
+        ...(type === "POC" ? { outcome: null } : {}),
+      };
+    return {};
+  };
+
   return JSON.stringify({
     creates: Array.from({ length: count }, (_, i) => ({
-      title: `${ideas[i % ideas.length]} – ${topic}`,
+      title: type === "TASK" ? `${ideas[i % ideas.length]} – ${topic}` : `${ideas[i % ideas.length]} ${topic}${count > 1 ? ` (${i + 1})` : ""}`,
       notes: `Drafted by the mock AI from: "${prompt}"`,
-      project: project?.name ?? (forMatch ? topic : null),
+      // Tasks: an unknown "for X" is passed through as a project name (so the preview flags it); other
+      // sections are often about a topic rather than a project.
+      project: project?.name ?? (type === "TASK" && forMatch ? topic : null),
       status,
+      ...extrasFor(i),
     })),
     updates: [],
-    message: `Mock AI: drafted ${count} item(s).`,
+    message: `Mock AI: drafted ${count} ${WORK_TYPE_META[type].label} item(s).`,
   });
 }

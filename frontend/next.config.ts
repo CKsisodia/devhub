@@ -10,6 +10,13 @@ const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:4000").replace
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  async redirects() {
+    return [
+      { source: "/backlog", destination: "/tasks", permanent: false },
+      { source: "/learning", destination: "/learnings", permanent: false },
+      { source: "/learning/:id", destination: "/learnings/:id", permanent: false },
+    ];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` }];
   },

@@ -43,7 +43,7 @@ async function callChatCompletions(messages: ReturnType<typeof buildMessages>): 
   }
 }
 
-export async function draftBacklog(prompt: string, ctx: DraftContext): Promise<DraftResult & { source: DraftSource }> {
+export async function draftWorkItems(prompt: string, ctx: DraftContext): Promise<DraftResult & { source: DraftSource }> {
   const mode = llmMode();
   if (mode === "disabled") {
     throw new HttpError(

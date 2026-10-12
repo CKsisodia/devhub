@@ -6,7 +6,8 @@ import { diff, logActivity } from "../lib/activity.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { toDate, ymd } from "../lib/dto.js";
 import { projectCreateSchema, projectUpdateSchema } from "../lib/schemas.js";
-import { statusCounts } from "../lib/stats.js";
+import { countsByType, statusCounts } from "../lib/stats.js";
+import { workItemDto, workItemInclude } from "../lib/dto.js";
 
 export const projectsRouter = Router();
 
@@ -15,14 +16,14 @@ projectsRouter.get("/", async (req, res) => {
   const projects = await prisma.project.findMany({
     where: includeArchived ? {} : { archived: false },
     include: {
-      backlogItems: { select: { status: true } },
+      workItems: { select: { status: true } },
       members: { include: { user: { select: { id: true, name: true, active: true } } }, orderBy: { addedAt: "asc" } },
     },
     orderBy: [{ archived: "asc" }, { name: "asc" }],
   });
   res.json(
     projects.map((p) => {
-      const s = statusCounts(p.backlogItems);
+      const s = statusCounts(p.workItems);
       return {
         id: p.id,
         name: p.name,
@@ -44,13 +45,14 @@ projectsRouter.get("/:id", async (req, res) => {
   const p = await prisma.project.findUnique({
     where: { id: String(req.params.id) },
     include: {
-      backlogItems: { select: { status: true } },
+      workItems: { select: { type: true, status: true } },
       members: { include: { user: { select: { id: true, name: true, active: true } } }, orderBy: { addedAt: "asc" } },
       createdBy: { select: { id: true, name: true } },
     },
   });
   if (!p) throw notFound("Project not found");
-  const s = statusCounts(p.backlogItems);
+  const s = statusCounts(p.workItems);
+  const recent = await prisma.workItem.findMany({ where: { projectId: p.id }, include: workItemInclude, orderBy: { updatedAt: "desc" }, take: 6 });
   res.json({
     id: p.id,
     name: p.name,
@@ -63,6 +65,8 @@ projectsRouter.get("/:id", async (req, res) => {
     counts: s.counts,
     itemCount: s.total,
     progress: s.progress,
+    byType: countsByType(p.workItems),
+    recent: recent.map(workItemDto),
     members: p.members.map((m) => m.user),
   });
 });
@@ -100,7 +104,7 @@ projectsRouter.patch("/:id", requireAdmin, async (req, res) => {
 projectsRouter.delete("/:id", requireAdmin, async (req, res) => {
   const p = await prisma.project.findUnique({ where: { id: String(req.params.id) } });
   if (!p) throw notFound("Project not found");
-  await prisma.project.delete({ where: { id: p.id } }); // cascades members and docs; backlog items keep existing without a project
+  await prisma.project.delete({ where: { id: p.id } }); // cascades members and docs; work items keep existing without a project
   await logActivity(prisma, { userId: req.user!.id, entityType: "project", entityId: p.id, action: "deleted", summary: `deleted project ${p.name}` });
   res.status(204).end();
 });

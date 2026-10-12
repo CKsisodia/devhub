@@ -1,5 +1,7 @@
 export type Role = "admin" | "viewer";
-export type BacklogStatus = "IN_PROGRESS" | "HOLD" | "DONE" | "REJECT";
+export type WorkStatus = "TODO" | "IN_PROGRESS" | "DONE" | "HOLD" | "REJECT";
+export type WorkType = "TASK" | "ROADMAP" | "RND" | "POC";
+export type PocOutcome = "ADOPT" | "DROP" | "NEEDS_MORE_WORK";
 export type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED";
 export type LearningType = "BLOG" | "ARTICLE" | "NEWS";
 
@@ -24,16 +26,39 @@ export interface AdminUser extends UserRef {
   createdAt: string;
 }
 
-export interface BacklogItem {
+/** Type-specific fields: Roadmap -> targetPeriod; R&D -> goal, timeboxEnd, findings; POC -> those + outcome. */
+export interface ExtraFields {
+  targetPeriod?: string | null;
+  goal?: string;
+  timeboxEnd?: string | null;
+  findings?: string;
+  outcome?: PocOutcome | null;
+}
+
+/** One item in Tasks, Roadmap, R&D or POC. */
+export interface WorkItem {
   id: string;
+  type: WorkType;
   title: string;
   notes: string;
   projectId: string | null;
   project: { id: string; name: string } | null;
-  status: BacklogStatus;
+  status: WorkStatus;
+  targetPeriod: string | null;
+  goal: string;
+  timeboxEnd: string | null;
+  findings: string;
+  outcome: PocOutcome | null;
   createdBy: UserRef;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface StatusStats {
+  counts: Record<WorkStatus, number>;
+  total: number;
+  done: number;
+  progress: number;
 }
 
 export interface Activity {
@@ -48,10 +73,12 @@ export interface Activity {
 
 export interface Dashboard {
   user: UserRef;
-  counts: Record<BacklogStatus, number>;
-  inProgress: BacklogItem[];
-  onHold: BacklogItem[];
-  projects: { id: string; name: string; status: ProjectStatus; counts: Record<BacklogStatus, number>; total: number; done: number; progress: number }[];
+  byType: Record<WorkType, StatusStats>;
+  counts: Record<WorkStatus, number>;
+  inProgress: WorkItem[];
+  upNext: WorkItem[];
+  onHold: WorkItem[];
+  projects: ({ id: string; name: string; status: ProjectStatus } & StatusStats)[];
   activity: Activity[];
 }
 
@@ -71,7 +98,9 @@ export interface ProjectSummary {
 
 export interface ProjectDetail extends Omit<ProjectSummary, "members" | "memberCount"> {
   createdBy: UserRef;
-  counts: Record<BacklogStatus, number>;
+  counts: Record<WorkStatus, number>;
+  byType: Record<WorkType, StatusStats>;
+  recent: WorkItem[];
   members: UserRef[];
 }
 
@@ -114,20 +143,23 @@ export interface DocPage {
 export interface DraftFlags {
   project?: string;
   status?: string;
+  targetPeriod?: string;
+  timeboxEnd?: string;
+  outcome?: string;
 }
-export interface DraftItem {
+export interface DraftItem extends ExtraFields {
   title: string;
   notes: string;
   projectId: string | null;
   projectName: string | null;
-  status: BacklogStatus;
+  status: WorkStatus;
   flags: DraftFlags;
 }
-export interface ItemFields {
+export interface ItemFields extends ExtraFields {
   title?: string;
   notes?: string;
   projectId?: string | null;
-  status?: BacklogStatus;
+  status?: WorkStatus;
 }
 export interface DraftUpdate {
   itemId: string;
@@ -137,6 +169,7 @@ export interface DraftUpdate {
   flags: DraftFlags;
 }
 export interface DraftResult {
+  type: WorkType;
   creates: DraftItem[];
   updates: DraftUpdate[];
   warnings: string[];

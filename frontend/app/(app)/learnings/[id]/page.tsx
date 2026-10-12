@@ -16,7 +16,7 @@ export default function LearningPostPage({ params }: { params: Promise<{ id: str
   if (error) return <EmptyState icon={GraduationCap} title="Item not found." />;
   return (
     <article className="mx-auto max-w-[720px]">
-      <Link href="/learning" className="mb-4 inline-flex items-center gap-1 text-[13px] text-muted hover:text-ink">
+      <Link href="/learnings" className="mb-4 inline-flex items-center gap-1 text-[13px] text-muted hover:text-ink">
         <ArrowLeft className="size-3.5" /> Learning
       </Link>
       {!item ? (

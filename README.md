@@ -1,18 +1,19 @@
 # DevHub · FE Panel
 
-An internal web panel for a small frontend team: a per-user **Dashboard**, a simple notes-style **Backlog**
-(manual entry and AI prompt-based entry), **Projects**, a curated **Learning** section and per-project
-**Docs** (Markdown, charts, wireframe images, Mermaid diagrams).
+An internal web panel for a small frontend team. Sidebar: **Dashboard · Projects · Tasks · Roadmap · R&D ·
+POC · Docs · Learnings** (plus **Users** for the admin). Tasks, Roadmap, R&D and POC are simple notes-style
+lists on one shared model, each with manual and AI prompt-based entry. Docs hold Markdown, charts, wireframe
+images and Mermaid diagrams.
 
 One **Admin** creates, edits and deletes everything. Everyone else is a **Viewer**: read-only, except that
-**any signed-in user can change a backlog item's status**.
+**any signed-in user can change the status of a Task, Roadmap, R&D or POC item**.
 
 Sign-in is **email + password, then a 6-digit code from an authenticator app** (TOTP: Google Authenticator,
 Microsoft Authenticator, Authy, 1Password…). There is no self sign-up: the admin adds people with a name,
 email and temporary password. On first sign-in each person scans a QR code to set up the authenticator app
 and then chooses their own password.
 
-> Built to the MVP in *Frontend Developer Panel: Requirements v1.2* and the *UI Design Brief v1.0*.
+> Built to the MVP in *Frontend Developer Panel: Requirements v1.3* and the *UI Design Brief v1.0*.
 > All names, emails and passwords in the seed data are fake development values.
 
 ## Folder structure
@@ -26,13 +27,13 @@ devhub/
 │   │   ├── index.ts          # server entry (listen on PORT)
 │   │   ├── app.ts            # Express app, routers, viewer guard, Origin check, error handler
 │   │   ├── auth/             # sign-in routes (password, TOTP, password change), DB sessions, middleware
-│   │   ├── routes/           # me, users, dashboard, backlog, ai, projects, learning, docs, uploads
+│   │   ├── routes/           # me, users, dashboard, workItems (tasks/roadmap/rnd/poc), ai, projects, learning, docs, uploads
 │   │   └── lib/              # zod schemas, argon2 passwords, TOTP + QR, AES-GCM secret encryption,
 │   │                         # rate limiter, activity log, LLM client, draft parser, storage
 │   └── tests/                # permissions, password + TOTP (unit + DB flow), AI draft parser (vitest)
 └── frontend/                 # Next.js 16 (App Router) + TypeScript + Tailwind CSS 4
     ├── app/                  # /login (password, QR setup, code, new password) and the signed-in app
-    ├── components/           # UI kit, backlog list + form, AI prompt + draft preview, Markdown/Mermaid/Chart, doc editor
+    ├── components/           # UI kit + motion, work item list/form (shared by 4 sections), AI prompt, command palette, Markdown/Mermaid/Chart, doc editor
     └── lib/                  # API client, types, formatting
 ```
 
@@ -66,7 +67,7 @@ cd ~/Desktop/devhub/backend
 cp .env.example .env     # defaults work with docker compose; adjust DATABASE_URL if you changed the port
 npm install              # also runs "prisma generate"
 npm run db:deploy        # apply migrations
-npm run db:seed          # fake users, projects, backlog, learning items and docs (prints the logins)
+npm run db:seed          # fake users, projects, tasks, roadmap, R&D, POCs, learning items and docs (prints the logins)
 npm run dev              # watch mode
 ```
 
@@ -175,35 +176,68 @@ cd backend && node -e 'import("@node-rs/argon2").then(async (a) => console.log(a
 | Action | Admin | Viewer |
 |---|---|---|
 | View dashboard (own) / any user's dashboard | ✓ / ✓ | ✓ / ✗ |
-| View backlog, projects, learning, docs | ✓ | ✓ |
-| **Change a backlog item's status** | ✓ | **✓** |
-| Add backlog items (manual or AI), edit, delete | ✓ | ✗ |
+| View tasks, roadmap, R&D, POC, projects, learnings, docs | ✓ | ✓ |
+| **Change a Task / Roadmap / R&D / POC item's status** | ✓ | **✓** |
+| Add items in those sections (manual or AI), edit, delete | ✓ | ✗ |
 | Create / edit / delete projects, members, learning items, docs, uploads | ✓ | ✗ |
 | Manage users (add, reset password, reset two-factor, deactivate) | ✓ | ✗ |
 
 Enforced in the backend: a global guard in `app.ts` rejects every non-GET request from a Viewer with 403
-**except** the single allow-listed route `PATCH /api/backlog/:id/status`; admin-only routes are additionally
+**except** the four allow-listed routes `PATCH /api/{tasks,roadmap,rnd,poc}/:id/status`; admin-only routes are additionally
 wrapped in `requireAdmin`. `backend/tests/permissions.test.ts` discovers every POST/PUT/PATCH/DELETE route
-from the routers and asserts a Viewer gets 403 on all of them except the status route (and that it is the only
-exception), plus 401 for anonymous callers. The UI hides admin controls from Viewers, but that is a convenience
+from the routers and asserts a Viewer gets 403 on all of them except the four status routes (and that they are the only
+exceptions), plus 401 for anonymous callers. The UI hides admin controls from Viewers, but that is a convenience
 only.
 
-## Backlog
+## Tasks, Roadmap, R&D and POC
 
-A backlog item is a simple record: **title, notes, project (optional), status, created by, created/updated
-times**. Statuses: **In progress, Hold, Done, Reject**. The Backlog page is a list with a status filter (with
-counts), a project filter and search. Each item has a status dropdown (everyone) and, for the admin, Edit and
-Delete (with confirmation). Project progress = Done ÷ (all items except Reject).
+All four sections are one `WorkItem` model (`work_items` table) with a `type` column, one generic router
+(`src/routes/workItems.ts`, mounted at `/api/tasks`, `/api/roadmap`, `/api/rnd`, `/api/poc`) and one set of
+frontend components (`WorkItemsView`, `WorkItemForm`, `AiPrompt`). An item belongs to exactly one section:
+requests through another section's route get 404.
 
-**AI entry:** the admin types into **Ask AI** (top bar, `⌘K`) or the prompt box on the Backlog page, e.g.
-*"Add 3 items for the login page redesign"* or *"Mark all Checkout Performance items as done"*.
+| | Tasks | Roadmap | R&D | POC |
+|---|:---:|:---:|:---:|:---:|
+| Title, notes, project (optional), status, created by, timestamps | ✓ | ✓ | ✓ | ✓ |
+| Target period (`2026-11` or `2026-Q4`) | | ✓ | | |
+| Goal, time box end date, findings | | | ✓ | ✓ |
+| Outcome (Adopt / Drop / Needs more work) | | | | ✓ |
 
-1. The backend sends the prompt plus the project and backlog lists to the LLM and asks for JSON only.
-2. The reply is validated with zod (`src/lib/draft.ts`). Project names are matched to real projects and
-   unknown names or statuses are **flagged rather than guessed**. Updates are only allowed for existing item
-   IDs and are shown as before → after diffs.
-3. The admin edits, deselects or removes drafts, then clicks **Confirm and save**. Only then does
-   `POST /api/backlog/bulk` write anything, in a single transaction, with activity log entries.
+Fields of another section are rejected with 400. Statuses (all four): **To do** (default), **In progress**,
+**Done**, **Hold**, **Reject**. Each list has a status filter with counts, a project filter and search (title
+and notes); Roadmap is grouped by target period. Everyone gets the status dropdown; the admin also gets
+New, Edit and Delete (with confirmation). Progress = Done ÷ (all items except Reject).
+
+API per section (`<s>` = `tasks` | `roadmap` | `rnd` | `poc`): `GET /api/<s>?status=&projectId=&q=`,
+`POST /api/<s>` (admin), `POST /api/<s>/bulk` (admin, one transaction), `PATCH /api/<s>/:id` (admin),
+`DELETE /api/<s>/:id` (admin), `PATCH /api/<s>/:id/status` (any signed-in active user).
+
+**Migration from v1.2:** `20261013090000_work_items` renames `backlog_items` to `work_items` in place, so
+every backlog item becomes a Task with the same id, status, project and timestamps (`npm run db:deploy`).
+Old links redirect: `/backlog` → `/tasks`, `/learning` → `/learnings` (the learning API stays at `/api/learning`).
+
+**AI entry:** each section has its own prompt box (admin only), e.g. *"Add 3 tasks for the login page
+redesign"*, *"Plan 2 roadmap items for Design System v2 next quarter"*, *"Start R&D on view transitions
+for 2 weeks"*, *"POC for a feature flag service, 3 weeks"*, or *"Mark all Checkout Performance tasks as done"*.
+
+1. `POST /api/ai/draft {prompt, type}` sends the prompt plus the project list and that section's items to the
+   LLM and asks for JSON only.
+2. The reply is validated with zod (`src/lib/draft.ts`). Drafts always get the section's type and only its
+   fields; project names, statuses, periods ("next quarter"), dates ("2 weeks") and outcomes are normalised,
+   and unknown values are **flagged rather than guessed**. Updates are only allowed for existing item IDs of
+   that section and are shown as before → after diffs.
+3. The drafts are revealed one by one in an editable preview. The admin edits, deselects or removes them,
+   then clicks **Confirm and save**. Only then does `POST /api/<s>/bulk` write anything, in a single
+   transaction, with activity log entries.
+
+## UI and motion
+
+Glass surfaces over a soft aurora background, gradient borders and glow on AI elements, an animated AI
+prompt (shimmering border, thinking state, streaming-style draft reveal), a collapsible sidebar (state kept in
+`localStorage`) with an animated active indicator, page transitions and staggered list entrances (`motion`),
+animated status pills, skeleton shimmer and empty states. **Cmd/Ctrl+K** opens a command palette that only
+navigates (pages, Users for the admin, projects). On phones the sidebar becomes a slide-in drawer. Everything
+honours `prefers-reduced-motion` (`MotionConfig reducedMotion="user"` plus a CSS reduced-motion block).
 
 ## Docs content format
 
@@ -217,7 +251,7 @@ flowchart LR
 ```
 
 ```chart
-{"type":"bar","title":"Backlog by status","data":[{"label":"In progress","value":3},{"label":"Done","value":5}]}
+{"type":"bar","title":"Tasks by status","data":[{"label":"In progress","value":3},{"label":"Done","value":5}]}
 ```
 
 ![Login wireframe](/api/uploads/files/<id>.png)

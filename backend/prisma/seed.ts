@@ -2,7 +2,7 @@
  * Seed script with CLEARLY FAKE example data (names from the design brief, @devhub.test emails, known dev
  * passwords). WARNING: wipes all app tables first. Run with `npm run db:seed`. Never use these in production.
  */
-import { PrismaClient, type BacklogStatus } from "@prisma/client";
+import { PrismaClient, type PocOutcome, type WorkItemStatus, type WorkItemType } from "@prisma/client";
 import { hashPassword } from "../src/lib/password.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -47,7 +47,7 @@ async function main() {
   await prisma.attachment.deleteMany();
   await prisma.doc.deleteMany({ where: { parentId: { not: null } } });
   await prisma.doc.deleteMany();
-  await prisma.backlogItem.deleteMany();
+  await prisma.workItem.deleteMany();
   await prisma.session.deleteMany();
   await prisma.projectMember.deleteMany();
   await prisma.project.deleteMany();
@@ -104,30 +104,61 @@ async function main() {
     },
   });
 
-  type B = [string | null, string, BacklogStatus, string, number];
-  const backlog: B[] = [
+  type T = [string | null, string, WorkItemStatus, string, number];
+  const tasks: T[] = [
     // project, title, status, notes, hours since last update
     [login.id, "Email + password form", "IN_PROGRESS", "Labels above inputs, show/hide password toggle.\n\n- Autofill friendly (`autocomplete=\"username\"` / `current-password`)\n- Inline error under the field", 3],
     [login.id, "6-box authenticator code input", "IN_PROGRESS", "Auto-advance, paste fills all boxes, backspace moves back. Numeric keypad on mobile.", 5],
     [login.id, "QR code setup screen", "IN_PROGRESS", "Show the QR plus the secret as text for manual entry. Explain which apps work (Google Authenticator, Authy, 1Password).", 8],
+    [login.id, "Remember the last used email", "TODO", "Pre-fill the email field on the sign-in screen (local storage, never the password).", 6],
     [login.id, "Error copy for wrong code / locked out", "HOLD", "Waiting for final wording from design.", 30],
     [login.id, "Session expiry redirect", "DONE", "Send the user back to /login and keep the page they were on.", 50],
     [login.id, "Glass card + gradient mesh background", "DONE", "", 70],
     [login.id, "SMS OTP fallback", "REJECT", "Dropped: we use an authenticator app only (no SMS costs or DLT registration).", 26],
-    [ds.id, "Status pill component", "IN_PROGRESS", "Four variants: In progress, Hold, Done, Reject.", 4],
+    [ds.id, "Status pill component", "IN_PROGRESS", "Five variants: To do, In progress, Done, Hold, Reject.", 4],
     [ds.id, "Colour tokens as CSS variables", "IN_PROGRESS", "Expose zinc scale + accent gradient as `--color-*`.", 20],
+    [ds.id, "Motion tokens (durations, easings)", "TODO", "150–200 ms, ease-out; respect prefers-reduced-motion.", 14],
     [ds.id, "Fix focus rings on buttons", "DONE", "2 px ring, offset 2, accent colour.", 72],
     [ds.id, "Typography scale (Inter)", "DONE", "", 120],
     [ds.id, "Docs site for components", "HOLD", "Parked until the component API is stable.", 96],
-    [ds.id, "Kanban card component", "REJECT", "Not needed: the backlog is a simple list now.", 40],
+    [ds.id, "Kanban card component", "REJECT", "Not needed: tasks are a simple list.", 40],
     [checkout.id, "Audit checkout bundle size", "HOLD", "Project paused until Q1.", 150],
     [checkout.id, "Measure LCP on mid-range Android", "IN_PROGRESS", "Baseline: 3.4 s on a Moto G. Target < 2.5 s.", 10],
     [null, "Upgrade to the latest Next.js minor", "IN_PROGRESS", "Team-wide chore, not tied to a project.", 12],
+    [null, "Write onboarding notes for new joiners", "TODO", "Local setup, review checklist, where docs live.", 9],
     [null, "Try container queries in the card grid", "HOLD", "Idea from the learning section.", 200],
   ];
-  const created = [];
-  for (const [projectId, title, status, notes, h] of backlog) {
-    created.push(await prisma.backlogItem.create({ data: { projectId, title, status, notes, createdById: asha.id, createdAt: ago(h + 48), updatedAt: ago(h) } }));
+
+  type Extra = { targetPeriod?: string; goal?: string; timeboxEnd?: Date; findings?: string; outcome?: PocOutcome };
+  type W = [WorkItemType, string | null, string, WorkItemStatus, string, number, Extra];
+  const y = new Date().getUTCFullYear();
+  const others: W[] = [
+    // Roadmap: target period = month or quarter
+    ["ROADMAP", ds.id, "Design System v2 stable release", "IN_PROGRESS", "All core components documented and used in two products.", 18, { targetPeriod: `${y}-Q4` }],
+    ["ROADMAP", login.id, "New sign-in live for everyone", "IN_PROGRESS", "Email + password + authenticator app for all internal tools.", 22, { targetPeriod: `${y}-11` }],
+    ["ROADMAP", checkout.id, "Checkout LCP under 2.5 s", "HOLD", "Resumes when the checkout project restarts.", 100, { targetPeriod: `${y + 1}-Q1` }],
+    ["ROADMAP", null, "Dark mode across all apps", "TODO", "Tokens are ready for it; needs a design pass.", 60, { targetPeriod: `${y + 1}-Q2` }],
+    ["ROADMAP", null, "Retire the legacy jQuery admin", "TODO", "Last two screens still use it.", 130, { targetPeriod: `${y + 1}-Q3` }],
+    ["ROADMAP", ds.id, "Icon set refresh", "DONE", "Moved to Lucide, 1.5 px stroke.", 300, { targetPeriod: `${y}-Q3` }],
+    // R&D: goal, time box, findings
+    ["RND", null, "Signals vs. React state for large forms", "IN_PROGRESS", "Compare re-render counts on the checkout form.", 7, { goal: "Decide whether signals are worth adopting for big forms.", timeboxEnd: day(9), findings: "Early numbers: ~40% fewer renders, but extra tooling." }],
+    ["RND", ds.id, "CSS anchor positioning for popovers", "TODO", "", 16, { goal: "Can we drop the positioning library for menus and tooltips?", timeboxEnd: day(21) }],
+    ["RND", null, "Bundle analysis tooling", "DONE", "", 90, { goal: "Pick one tool for CI bundle-size checks.", timeboxEnd: day(-5), findings: "Chose the bundler's built-in analyzer + a size budget in CI." }],
+    ["RND", checkout.id, "Edge rendering for checkout", "HOLD", "", 140, { goal: "Measure TTFB gains from rendering at the edge.", timeboxEnd: day(30), findings: "" }],
+    // POC: goal, time box, findings, outcome
+    ["POC", login.id, "Passkeys as a second factor", "IN_PROGRESS", "Throwaway branch, not production code.", 5, { goal: "Can passkeys replace the 6-digit code for supported devices?", timeboxEnd: day(6), findings: "Works in Chrome and Safari; Firefox on Linux is patchy." }],
+    ["POC", ds.id, "View Transitions API for page changes", "DONE", "", 48, { goal: "Smooth page transitions without a JS animation library.", timeboxEnd: day(-3), findings: "Nice in Chromium; needs a fallback elsewhere.", outcome: "NEEDS_MORE_WORK" }],
+    ["POC", null, "Storybook 9 upgrade", "DONE", "", 110, { goal: "Check our stories still build and interaction tests pass.", timeboxEnd: day(-12), findings: "Smooth upgrade, faster startup.", outcome: "ADOPT" }],
+    ["POC", null, "Micro-frontends with module federation", "REJECT", "", 260, { goal: "Split the admin into independently deployed parts.", timeboxEnd: day(-30), findings: "Too much complexity for a team our size.", outcome: "DROP" }],
+    ["POC", checkout.id, "Server components for the cart", "TODO", "", 20, { goal: "Ship less JS on the cart page.", timeboxEnd: day(14) }],
+  ];
+  const created: { id: string; title: string }[] = [];
+  for (const [projectId, title, status, notes, h] of tasks) {
+    created.push(await prisma.workItem.create({ data: { type: "TASK", projectId, title, status, notes, createdById: asha.id, createdAt: ago(h + 48), updatedAt: ago(h) } }));
+  }
+  const createdOther: { id: string; title: string }[] = [];
+  for (const [type, projectId, title, status, notes, h, extra] of others) {
+    createdOther.push(await prisma.workItem.create({ data: { type, projectId, title, status, notes, ...extra, createdById: asha.id, createdAt: ago(h + 48), updatedAt: ago(h) } }));
   }
 
   // Learning (example curation; links point to well-known public resources)
@@ -185,7 +216,7 @@ async function main() {
     title: "Auth flow",
     position: 0,
     content:
-      "# Auth flow\n\nOnly users added by the admin can sign in. First sign-in: scan a QR code, confirm a code. Every later sign-in: password, then code.\n\n```mermaid\nsequenceDiagram\n  actor U as User\n  participant FE as Frontend\n  participant API as API\n  U->>FE: Email + password\n  FE->>API: POST /api/auth/login\n  API-->>FE: step = totp_setup or totp_verify\n  alt First sign-in\n    FE->>API: POST /api/auth/totp/setup\n    API-->>FE: QR code\n    U->>FE: Scan, type 6-digit code\n    FE->>API: POST /api/auth/totp/enable\n  else Enrolled\n    U->>FE: 6-digit code\n    FE->>API: POST /api/auth/totp/verify\n  end\n  API-->>FE: httpOnly session cookie\n```\n\n## Backlog by status\n\n```chart\n{\"type\":\"bar\",\"title\":\"Login Redesign: backlog by status\",\"data\":[{\"label\":\"In progress\",\"value\":3},{\"label\":\"Hold\",\"value\":1},{\"label\":\"Done\",\"value\":2},{\"label\":\"Reject\",\"value\":1}]}\n```\n",
+      "# Auth flow\n\nOnly users added by the admin can sign in. First sign-in: scan a QR code, confirm a code. Every later sign-in: password, then code.\n\n```mermaid\nsequenceDiagram\n  actor U as User\n  participant FE as Frontend\n  participant API as API\n  U->>FE: Email + password\n  FE->>API: POST /api/auth/login\n  API-->>FE: step = totp_setup or totp_verify\n  alt First sign-in\n    FE->>API: POST /api/auth/totp/setup\n    API-->>FE: QR code\n    U->>FE: Scan, type 6-digit code\n    FE->>API: POST /api/auth/totp/enable\n  else Enrolled\n    U->>FE: 6-digit code\n    FE->>API: POST /api/auth/totp/verify\n  end\n  API-->>FE: httpOnly session cookie\n```\n\n## Tasks by status\n\n```chart\n{\"type\":\"bar\",\"title\":\"Login Redesign: tasks by status\",\"data\":[{\"label\":\"To do\",\"value\":1},{\"label\":\"In progress\",\"value\":3},{\"label\":\"Done\",\"value\":2},{\"label\":\"Hold\",\"value\":1},{\"label\":\"Reject\",\"value\":1}]}\n```\n",
   });
   await doc({
     projectId: login.id,
@@ -213,18 +244,23 @@ async function main() {
     title: "Team conventions",
     position: 0,
     content:
-      "# Team conventions\n\nTeam-wide docs live in the **General** space.\n\n```mermaid\nflowchart TD\n  A[Pick item from backlog] --> B[Branch + PR]\n  B --> C{Review}\n  C -->|changes| B\n  C -->|approved| D[Merge + deploy]\n```\n",
+      "# Team conventions\n\nTeam-wide docs live in the **General** space.\n\n```mermaid\nflowchart TD\n  A[Pick a task] --> B[Branch + PR]\n  B --> C{Review}\n  C -->|changes| B\n  C -->|approved| D[Merge + deploy]\n```\n",
   });
 
   // Recent activity examples
   const act = (summary: string, entityType: string, entityId: string, projectId: string | null, hours: number, action = "updated") =>
     prisma.activityLog.create({ data: { userId: asha.id, entityType, entityId, projectId, action, summary, createdAt: ago(hours) } });
-  await act(`set "${created[0].title}" to In progress`, "backlog", created[0].id, login.id, 3);
+  const byTitle = (t: string) => [...created, ...createdOther].find((i) => i.title === t)!;
+  await act(`set "Email + password form" to In progress`, "task", byTitle("Email + password form").id, login.id, 3);
+  await act(`set "Passkeys as a second factor" to In progress`, "poc", byTitle("Passkeys as a second factor").id, login.id, 5);
+  await act(`updated "Signals vs. React state for large forms" (findings)`, "rnd", byTitle("Signals vs. React state for large forms").id, null, 7);
+  await act(`set "Design System v2 stable release" to In progress`, "roadmap", byTitle("Design System v2 stable release").id, ds.id, 18);
   await act(`updated doc "Auth flow"`, "doc", authFlow.id, login.id, 26);
-  await act(`set "${created[6].title}" to Reject`, "backlog", created[6].id, login.id, 26);
-  await act(`added "${created[2].title}"`, "backlog", created[2].id, login.id, 30, "created");
-  await act(`set "${created[11].title}" to Hold`, "backlog", created[11].id, ds.id, 96);
-  await act(`set "${created[9].title}" to Done`, "backlog", created[9].id, ds.id, 72);
+  await act(`set "SMS OTP fallback" to Reject`, "task", byTitle("SMS OTP fallback").id, login.id, 26);
+  await act(`added "QR code setup screen"`, "task", byTitle("QR code setup screen").id, login.id, 30, "created");
+  await act(`set "View Transitions API for page changes" to Done`, "poc", byTitle("View Transitions API for page changes").id, ds.id, 48);
+  await act(`set "Fix focus rings on buttons" to Done`, "task", byTitle("Fix focus rings on buttons").id, ds.id, 72);
+  await act(`set "Docs site for components" to Hold`, "task", byTitle("Docs site for components").id, ds.id, 96);
 
   console.log(`
 Seeded example data (fake). Sign in at http://localhost:3000/login with:

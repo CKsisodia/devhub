@@ -6,7 +6,7 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: { default: "FE Panel", template: "%s · FE Panel" },
-  description: "DevHub: the frontend team's panel for dashboards, backlog, projects, learning and docs.",
+  description: "DevHub: the frontend team's panel for dashboards, tasks, roadmap, R&D, POCs, projects, learnings and docs.",
 };
 
 export const viewport: Viewport = { themeColor: "#FAFAFA", width: "device-width", initialScale: 1 };

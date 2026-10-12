@@ -1,4 +1,4 @@
-// DevHub / FE Panel data model (see requirements v1.2, section 4)
+// DevHub / FE Panel data model (see requirements v1.3, section 4)
 
 generator client {
   provider = "prisma-client-js"
@@ -15,11 +15,27 @@ enum ProjectStatus {
   COMPLETED
 }
 
-enum BacklogStatus {
+/// The four work sections share one model; `type` says which section an item belongs to.
+enum WorkItemType {
+  TASK
+  ROADMAP
+  RND
+  POC
+}
+
+enum WorkItemStatus {
+  TODO
   IN_PROGRESS
-  HOLD
   DONE
+  HOLD
   REJECT
+}
+
+/// POC only
+enum PocOutcome {
+  ADOPT
+  DROP
+  NEEDS_MORE_WORK
 }
 
 enum LearningType {
@@ -51,7 +67,7 @@ model User {
 
   sessions      Session[]
   memberships   ProjectMember[]
-  backlogItems  BacklogItem[]
+  workItems     WorkItem[]
   projects      Project[]       @relation("ProjectCreatedBy")
   learningItems LearningItem[]
   docsCreated   Doc[]           @relation("DocCreatedBy")
@@ -91,9 +107,9 @@ model Project {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  members      ProjectMember[]
-  backlogItems BacklogItem[]
-  docs         Doc[]
+  members   ProjectMember[]
+  workItems WorkItem[]
+  docs      Doc[]
 
   @@map("projects")
 }
@@ -109,22 +125,29 @@ model ProjectMember {
   @@map("project_members")
 }
 
-/// Backlog = a simple list of notes-like records (no assignee / priority / due date / board columns).
-model BacklogItem {
-  id          String        @id @default(uuid()) @db.Uuid
-  title       String
-  notes       String        @default("")
-  projectId   String?       @map("project_id") @db.Uuid // optional: null = not tied to a project
-  project     Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  status      BacklogStatus @default(IN_PROGRESS)
-  createdById String        @map("created_by") @db.Uuid
-  createdBy   User          @relation(fields: [createdById], references: [id])
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+/// Work items: Tasks, Roadmap, R&D and POC are all simple notes-like records with a status.
+/// Type-specific fields: Roadmap -> targetPeriod; R&D -> goal, timeboxEnd, findings; POC -> those + outcome.
+model WorkItem {
+  id           String         @id @default(uuid()) @db.Uuid
+  type         WorkItemType   @default(TASK)
+  title        String
+  notes        String         @default("")
+  projectId    String?        @map("project_id") @db.Uuid // optional: null = not tied to a project
+  project      Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  status       WorkItemStatus @default(TODO)
+  targetPeriod String?        @map("target_period") // Roadmap: "2026-11" (month) or "2026-Q4" (quarter)
+  goal         String         @default("") // R&D, POC
+  timeboxEnd   DateTime?      @map("timebox_end") @db.Date // R&D, POC
+  findings     String         @default("") // R&D, POC
+  outcome      PocOutcome? // POC
+  createdById  String         @map("created_by") @db.Uuid
+  createdBy    User           @relation(fields: [createdById], references: [id])
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
 
+  @@index([type, status])
   @@index([projectId])
-  @@index([status])
-  @@map("backlog_items")
+  @@map("work_items")
 }
 
 model LearningItem {
@@ -183,7 +206,7 @@ model ActivityLog {
   id         String   @id @default(uuid()) @db.Uuid
   userId     String   @map("user_id") @db.Uuid
   user       User     @relation(fields: [userId], references: [id])
-  entityType String   @map("entity_type") // backlog | doc | project | learning | user
+  entityType String   @map("entity_type") // task | roadmap | rnd | poc | doc | project | learning | user
   entityId   String   @map("entity_id") @db.Uuid
   projectId  String?  @map("project_id") @db.Uuid // denormalised for dashboard "recent activity"
   action     String // created | updated | deleted

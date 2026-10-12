@@ -6,15 +6,17 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Archive, ArchiveRestore, ArrowLeft, CalendarDays, ChevronRight, FileText, MoreHorizontal, Pencil, Plus, Trash2, UserMinus, Users } from "lucide-react";
 import { api, fetcher } from "@/lib/api";
-import { formatDate, STATUS_LABEL, STATUS_STYLE, STATUSES } from "@/lib/format";
-import { refreshBacklogData, useIsAdmin, useUsers } from "@/lib/hooks";
-import type { DocNode, ProjectDetail } from "@/lib/types";
-import { Avatar, Button, Card, ConfirmModal, EmptyState, IconButton, Menu, PageHeader, Pill, ProgressBar, ProjectStatusPill, Select, Skeleton, Tabs } from "@/components/ui";
-import { BacklogView } from "@/components/BacklogView";
+import { formatDate } from "@/lib/format";
+import { refreshWorkData, useIsAdmin, useUsers } from "@/lib/hooks";
+import type { DocNode, ProjectDetail, WorkType } from "@/lib/types";
+import { WORK, WORK_TYPES } from "@/lib/workTypes";
+import { Avatar, Button, Card, ConfirmModal, EmptyState, IconButton, Menu, PageHeader, Pill, ProgressBar, ProjectStatusPill, Segmented, Select, Skeleton, Tabs } from "@/components/ui";
+import { WorkItemsView } from "@/components/WorkItemsView";
+import { TypeStatCards, WorkRows } from "@/components/WorkOverview";
 import { ProjectForm } from "@/components/ProjectForm";
 import { useToast } from "@/components/toast";
 
-type Tab = "overview" | "backlog" | "docs" | "members";
+type Tab = "overview" | "work" | "docs" | "members";
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -25,11 +27,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const { data: docs } = useSWR<DocNode[]>(`/api/docs?projectId=${id}`, fetcher);
   const { data: users } = useUsers();
   const [tab, setTab] = useState<Tab>("overview");
+  const [workType, setWorkType] = useState<WorkType>("TASK");
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [addMember, setAddMember] = useState("");
 
-  if (error) return <EmptyState icon={FileText} title="Project not found." action={<Link href="/projects" className="text-sm font-medium text-accent-600">Back to projects</Link>} />;
+  if (error)
+    return (
+      <EmptyState
+        icon={FileText}
+        title="Project not found."
+        action={
+          <Link href="/projects" className="text-sm font-medium text-accent-600">
+            Back to projects
+          </Link>
+        }
+      />
+    );
   if (!p)
     return (
       <div className="space-y-4">
@@ -42,7 +56,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     try {
       await fn();
       await mutate();
-      refreshBacklogData();
+      refreshWorkData();
       toast(msg);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Something went wrong", "error");
@@ -62,7 +76,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         title={
           <span className="flex flex-wrap items-center gap-3">
             {project.name} <ProjectStatusPill status={project.status} />
-            {project.archived && <Pill bg="#F4F4F5" text="#71717A">Archived</Pill>}
+            {project.archived && (
+              <Pill bg="#F4F4F5" text="#71717A">
+                Archived
+              </Pill>
+            )}
           </span>
         }
         actions={
@@ -75,9 +93,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 trigger={(t) => <IconButton icon={MoreHorizontal} label="More project actions" {...t} />}
                 items={[
                   project.archived
-                    ? { label: "Unarchive", icon: ArchiveRestore, onClick: () => act(() => api(`/api/projects/${id}`, { method: "PATCH", body: { archived: false } }), "Project unarchived") }
-                    : { label: "Archive", icon: Archive, onClick: () => act(() => api(`/api/projects/${id}`, { method: "PATCH", body: { archived: true } }), "Project archived") },
-                  { label: "Delete project", icon: Trash2, danger: true, onClick: () => setConfirmDelete(true) },
+                    ? {
+                        label: "Unarchive",
+                        icon: ArchiveRestore,
+                        onClick: () =>
+                          act(
+                            () =>
+                              api(`/api/projects/${id}`, {
+                                method: "PATCH",
+                                body: { archived: false },
+                              }),
+                            "Project unarchived",
+                          ),
+                      }
+                    : {
+                        label: "Archive",
+                        icon: Archive,
+                        onClick: () =>
+                          act(
+                            () =>
+                              api(`/api/projects/${id}`, {
+                                method: "PATCH",
+                                body: { archived: true },
+                              }),
+                            "Project archived",
+                          ),
+                      },
+                  {
+                    label: "Delete project",
+                    icon: Trash2,
+                    danger: true,
+                    onClick: () => setConfirmDelete(true),
+                  },
                 ]}
               />
             </>
@@ -89,63 +136,87 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         onChange={setTab}
         tabs={[
           { value: "overview", label: "Overview" },
-          { value: "backlog", label: "Backlog", count: project.itemCount },
+          { value: "work", label: "Work", count: project.itemCount },
           { value: "docs", label: "Docs", count: docs?.length },
           { value: "members", label: "Members", count: project.members.length },
         ]}
       />
 
       {tab === "overview" && (
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <Card>
-            <h2 className="mb-2 text-base font-semibold">About</h2>
-            <p className="whitespace-pre-wrap text-sm leading-6 text-secondary">{project.description || "No description."}</p>
-            <div className="mt-6">
-              <div className="mb-1.5 flex justify-between text-sm">
-                <span className="font-medium">Progress</span>
-                <span className="tabular text-muted" title="Done ÷ all items except rejected ones">{project.progress}%</span>
-              </div>
-              <ProgressBar value={project.progress} />
-            </div>
-            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {STATUSES.map((s) => (
-                <div key={s} className="rounded-lg bg-subtle/70 p-3">
-                  <div className="flex items-center gap-1.5 text-xs text-muted">
-                    <span className="size-1.5 rounded-full" style={{ background: STATUS_STYLE[s].dot }} />
-                    {STATUS_LABEL[s]}
-                  </div>
-                  <div className="tabular mt-0.5 text-xl font-semibold">{project.counts[s]}</div>
+        <>
+          <div className="mb-6">
+            <TypeStatCards
+              byType={project.byType}
+              onSelect={(t) => {
+                setWorkType(t);
+                setTab("work");
+              }}
+            />
+          </div>
+          <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+            <Card>
+              <h2 className="mb-2 text-base font-semibold">About</h2>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-secondary">{project.description || "No description."}</p>
+              <div className="mt-6">
+                <div className="mb-1.5 flex justify-between text-sm">
+                  <span className="font-medium">Progress</span>
+                  <span className="tabular text-muted" title="Done ÷ all items except rejected ones">
+                    {project.progress}%
+                  </span>
                 </div>
-              ))}
-            </div>
+                <ProgressBar value={project.progress} />
+              </div>
+            </Card>
+            <Card>
+              <h2 className="mb-3 text-base font-semibold">Details</h2>
+              <dl className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <dt className="flex items-center gap-2 text-muted">
+                    <CalendarDays className="size-4" strokeWidth={1.5} /> Start
+                  </dt>
+                  <dd>{formatDate(project.startDate, true) || "—"}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt className="flex items-center gap-2 text-muted">
+                    <CalendarDays className="size-4" strokeWidth={1.5} /> Target
+                  </dt>
+                  <dd>{formatDate(project.targetDate, true) || "—"}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt className="flex items-center gap-2 text-muted">
+                    <Users className="size-4" strokeWidth={1.5} /> Members
+                  </dt>
+                  <dd>{project.members.length}</dd>
+                </div>
+              </dl>
+            </Card>
+          </div>
+          <Card as="section" className="mt-6 p-0">
+            <h2 className="px-5 pb-2 pt-4 text-base font-semibold">Recently updated</h2>
+            {project.recent.length ? <WorkRows items={project.recent} showProject={false} /> : <p className="px-5 pb-5 text-sm text-muted">No work items in this project yet.</p>}
           </Card>
-          <Card>
-            <h2 className="mb-3 text-base font-semibold">Details</h2>
-            <dl className="space-y-3 text-sm">
-              <div className="flex items-center justify-between">
-                <dt className="flex items-center gap-2 text-muted">
-                  <CalendarDays className="size-4" strokeWidth={1.5} /> Start
-                </dt>
-                <dd>{formatDate(project.startDate, true) || "—"}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="flex items-center gap-2 text-muted">
-                  <CalendarDays className="size-4" strokeWidth={1.5} /> Target
-                </dt>
-                <dd>{formatDate(project.targetDate, true) || "—"}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="flex items-center gap-2 text-muted">
-                  <Users className="size-4" strokeWidth={1.5} /> Members
-                </dt>
-                <dd>{project.members.length}</dd>
-              </div>
-            </dl>
-          </Card>
-        </div>
+        </>
       )}
 
-      {tab === "backlog" && <BacklogView projectId={id} />}
+      {tab === "work" && (
+        <>
+          <div className="mb-4">
+            <Segmented
+              id="proj-type"
+              label="Work type"
+              value={workType}
+              onChange={setWorkType}
+              options={WORK_TYPES.map((t) => ({
+                value: t,
+                label: WORK[t].label,
+                icon: WORK[t].icon,
+                count: project.byType[t].total,
+              }))}
+            />
+          </div>
+          <WorkItemsView key={workType} type={workType} projectId={id} />
+        </>
+      )}
 
       {tab === "docs" && (
         <Card className="p-0">
@@ -199,7 +270,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   size="m"
                   icon={Plus}
                   disabled={!addMember}
-                  onClick={() => act(() => api(`/api/projects/${id}/members`, { body: { userId: addMember } }), "Member added").then(() => setAddMember(""))}
+                  onClick={() =>
+                    act(
+                      () =>
+                        api(`/api/projects/${id}/members`, {
+                          body: { userId: addMember },
+                        }),
+                      "Member added",
+                    ).then(() => setAddMember(""))
+                  }
                 >
                   Add member
                 </Button>
@@ -215,12 +294,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <Avatar name={m.name} inactive={m.active === false} />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{m.name}</div>
-                    <div className="text-xs text-muted">
-                      {m.active === false ? "Deactivated" : "Member"}
-                    </div>
+                    <div className="text-xs text-muted">{m.active === false ? "Deactivated" : "Member"}</div>
                   </div>
                   {isAdmin && (
-                    <Button size="s" variant="ghost" icon={UserMinus} onClick={() => act(() => api(`/api/projects/${id}/members/${m.id}`, { method: "DELETE" }), "Member removed")}>
+                    <Button
+                      size="s"
+                      variant="ghost"
+                      icon={UserMinus}
+                      onClick={() =>
+                        act(
+                          () =>
+                            api(`/api/projects/${id}/members/${m.id}`, {
+                              method: "DELETE",
+                            }),
+                          "Member removed",
+                        )
+                      }
+                    >
                       Remove
                     </Button>
                   )}
@@ -235,12 +325,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       <ConfirmModal
         open={confirmDelete}
         title="Delete project?"
-        text={`"${project.name}" and its docs will be permanently deleted; its backlog items stay, without a project. Consider archiving instead.`}
+        text={`"${project.name}" and its docs will be permanently deleted; its tasks, roadmap, R&D and POC items stay, without a project. Consider archiving instead.`}
         onClose={() => setConfirmDelete(false)}
         onConfirm={async () => {
           try {
             await api(`/api/projects/${id}`, { method: "DELETE" });
-            refreshBacklogData();
+            refreshWorkData();
             toast("Project deleted");
             router.push("/projects");
           } catch (e) {

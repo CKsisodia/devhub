@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { badRequest } from "./errors.js";
+import { EXTRA_FIELDS, PERIOD_RE, POC_OUTCOMES, WORK_STATUSES, WORK_TYPE_META, WORK_TYPES, type WorkType } from "./workTypes.js";
 
-export const BACKLOG_STATUSES = ["IN_PROGRESS", "HOLD", "DONE", "REJECT"] as const;
+export { WORK_STATUSES, WORK_TYPES };
+
 export const PROJECT_STATUSES = ["ACTIVE", "ON_HOLD", "COMPLETED"] as const;
 export const LEARNING_TYPES = ["BLOG", "ARTICLE", "NEWS"] as const;
 
@@ -11,28 +14,52 @@ const isoDate = z
 
 const tags = z.array(z.string().trim().min(1).max(40)).max(20);
 
-export const backlogCreateSchema = z.object({
+// ---------- Work items (Tasks, Roadmap, R&D, POC) ----------
+// One schema for all four sections; fields that don't belong to a section are rejected by
+// assertExtrasAllowed() in the route (see WORK_TYPE_META.extras).
+const extra = {
+  targetPeriod: z.string().regex(PERIOD_RE, "Use a month (2026-11) or a quarter (2026-Q4)").nullable(),
+  goal: z.string().max(2000),
+  timeboxEnd: isoDate.nullable(),
+  findings: z.string().max(20000),
+  outcome: z.enum(POC_OUTCOMES).nullable(),
+};
+
+export const workItemCreateSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
   notes: z.string().max(20000).default(""),
   projectId: z.uuid().nullable().optional(),
-  status: z.enum(BACKLOG_STATUSES).default("IN_PROGRESS"),
+  status: z.enum(WORK_STATUSES).default("TODO"),
+  targetPeriod: extra.targetPeriod.optional(),
+  goal: extra.goal.optional(),
+  timeboxEnd: extra.timeboxEnd.optional(),
+  findings: extra.findings.optional(),
+  outcome: extra.outcome.optional(),
 });
 
-export const backlogUpdateSchema = z
+export const workItemUpdateSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
     notes: z.string().max(20000),
     projectId: z.uuid().nullable(),
-    status: z.enum(BACKLOG_STATUSES),
+    status: z.enum(WORK_STATUSES),
+    ...extra,
   })
   .partial();
 
-export const backlogStatusSchema = z.object({ status: z.enum(BACKLOG_STATUSES) });
+export const workItemStatusSchema = z.object({ status: z.enum(WORK_STATUSES) });
 
-export const backlogBulkSchema = z.object({
-  creates: z.array(backlogCreateSchema).max(50).default([]),
-  updates: z.array(z.object({ id: z.uuid(), patch: backlogUpdateSchema })).max(100).default([]),
+export const workItemBulkSchema = z.object({
+  creates: z.array(workItemCreateSchema).max(50).default([]),
+  updates: z.array(z.object({ id: z.uuid(), patch: workItemUpdateSchema })).max(100).default([]),
 });
+
+/** Rejects type-specific fields sent to a section that doesn't use them (e.g. outcome on a Task). */
+export function assertExtrasAllowed(type: WorkType, input: Record<string, unknown>) {
+  const allowed = WORK_TYPE_META[type].extras;
+  const bad = EXTRA_FIELDS.filter((f) => input[f] !== undefined && !allowed.includes(f));
+  if (bad.length) throw badRequest(`${bad.join(", ")}: not used for ${WORK_TYPE_META[type].label} items`);
+}
 
 export const projectCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
@@ -118,4 +145,6 @@ export const userResetPasswordSchema = z.object({ tempPassword });
 
 export const aiDraftSchema = z.object({
   prompt: z.string().trim().min(3, "Type a request for the AI").max(2000),
+  /** Which section the drafts are for; AI creates items of this type only. */
+  type: z.enum(WORK_TYPES).default("TASK"),
 });

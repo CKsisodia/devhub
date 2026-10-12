@@ -3,36 +3,40 @@
 import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
-import { ChevronRight, Eye, FolderKanban, Inbox, PauseCircle } from "lucide-react";
-import { api, fetcher } from "@/lib/api";
-import { greeting, STATUS_LABEL, STATUS_STYLE, STATUSES, timeAgo } from "@/lib/format";
-import { refreshBacklogData, useMe, useUsers } from "@/lib/hooks";
-import type { BacklogItem, BacklogStatus, Dashboard } from "@/lib/types";
+import { motion } from "motion/react";
+import { CircleDashed, Eye, FolderKanban, Inbox, PauseCircle } from "lucide-react";
+import { fetcher } from "@/lib/api";
+import { greeting, timeAgo } from "@/lib/format";
+import { useMe, useUsers } from "@/lib/hooks";
+import type { Dashboard, WorkItem } from "@/lib/types";
 import { Avatar, Banner, Card, EmptyState, PageHeader, ProgressBar, Select, Skeleton } from "@/components/ui";
-import { StatusSelect } from "@/components/BacklogView";
-import { useToast } from "@/components/toast";
+import { itemVariants, listVariants } from "@/components/motion";
+import { TypeStatCards, WorkRows } from "@/components/WorkOverview";
 
-function ItemRows({ items, onStatus }: { items: BacklogItem[]; onStatus: (item: BacklogItem, s: BacklogStatus) => void }) {
+function ListCard({ title, icon: Icon, items, loading, empty }: { title: string; icon: typeof Inbox; items?: WorkItem[]; loading: boolean; empty?: string }) {
+  if (!loading && !items?.length && !empty) return null;
   return (
-    <ul className="pb-2">
-      {items.map((i) => (
-        <li key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm sm:flex-nowrap">
-          <span className="w-full min-w-0 sm:w-auto sm:flex-1">
-            <span className="block truncate font-medium">{i.title}</span>
-            <span className="block truncate text-xs text-muted">
-              {i.project?.name ?? "No project"} · updated {timeAgo(i.updatedAt)}
-            </span>
-          </span>
-          <StatusSelect item={i} onChange={(s) => onStatus(i, s)} />
-        </li>
-      ))}
-    </ul>
+    <Card as="section" className="p-0">
+      <h2 className="flex items-center gap-2 px-5 pb-2 pt-4 text-base font-semibold">
+        <Icon className="size-4 text-accent-500" strokeWidth={1.75} /> {title}
+      </h2>
+      {loading && !items ? (
+        <div className="space-y-2 p-5">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </div>
+      ) : !items?.length ? (
+        <EmptyState icon={Icon} title={empty!} />
+      ) : (
+        <WorkRows items={items} />
+      )}
+    </Card>
   );
 }
 
 export default function DashboardPage() {
   const me = useMe();
-  const toast = useToast();
   const isAdmin = me.user.role === "admin";
   const [viewing, setViewing] = useState(me.user.id);
   const { data: users } = useUsers();
@@ -40,22 +44,11 @@ export default function DashboardPage() {
   const firstName = (data?.user.name ?? me.user.name).split(" ")[0];
   const self = viewing === me.user.id;
 
-  async function setStatus(item: BacklogItem, status: BacklogStatus) {
-    if (status === item.status) return;
-    try {
-      await api(`/api/backlog/${item.id}/status`, { method: "PATCH", body: { status } });
-      toast(`“${item.title}” set to ${STATUS_LABEL[status]}`);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't change status", "error");
-    }
-    refreshBacklogData();
-  }
-
   return (
     <>
       <PageHeader
         title={self ? `${greeting()}, ${firstName}` : `${data?.user.name ?? "…"}'s dashboard`}
-        subtitle={self ? "The backlog across your projects." : "The backlog across their projects."}
+        subtitle={self ? "Tasks, roadmap, R&D and POCs across your projects." : "Tasks, roadmap, R&D and POCs across their projects."}
         actions={
           isAdmin && (
             <label className="flex items-center gap-2 text-sm text-muted">
@@ -80,47 +73,15 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {STATUSES.map((s) => (
-          <Card key={s} className="p-4">
-            <div className="flex items-center gap-2 text-[13px] text-muted">
-              <span className="size-2 rounded-full" style={{ background: STATUS_STYLE[s].dot }} />
-              {STATUS_LABEL[s]}
-            </div>
-            {data ? <div className="tabular mt-1 text-2xl font-semibold">{data.counts[s]}</div> : <Skeleton className="mt-2 h-7 w-10" />}
-          </Card>
-        ))}
+      <div className="mb-6">
+        <TypeStatCards byType={data?.byType} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">
-          <Card as="section" className="p-0">
-            <div className="flex items-center justify-between px-5 pb-2 pt-4">
-              <h2 className="text-base font-semibold">In progress</h2>
-              <Link href="/backlog" className="inline-flex items-center gap-0.5 text-[13px] font-medium text-accent-600 hover:underline">
-                View backlog <ChevronRight className="size-3.5" />
-              </Link>
-            </div>
-            {isLoading && !data ? (
-              <div className="space-y-2 p-5">
-                {[0, 1, 2].map((i) => (
-                  <Skeleton key={i} className="h-9 w-full" />
-                ))}
-              </div>
-            ) : !data?.inProgress.length ? (
-              <EmptyState icon={Inbox} title="Nothing in progress right now." />
-            ) : (
-              <ItemRows items={data.inProgress} onStatus={setStatus} />
-            )}
-          </Card>
-          {data && data.onHold.length > 0 && (
-            <Card as="section" className="p-0">
-              <h2 className="flex items-center gap-2 px-5 pb-2 pt-4 text-base font-semibold">
-                <PauseCircle className="size-4 text-sky-600" /> On hold
-              </h2>
-              <ItemRows items={data.onHold} onStatus={setStatus} />
-            </Card>
-          )}
+          <ListCard title="In progress" icon={Inbox} items={data?.inProgress} loading={isLoading} empty="Nothing in progress right now." />
+          <ListCard title="Up next" icon={CircleDashed} items={data?.upNext} loading={isLoading} />
+          <ListCard title="On hold" icon={PauseCircle} items={data?.onHold} loading={isLoading} />
         </div>
 
         <Card as="section">
@@ -130,12 +91,12 @@ export default function DashboardPage() {
           ) : !data.projects.length ? (
             <EmptyState icon={FolderKanban} title="Not a member of any project yet." />
           ) : (
-            <ul className="space-y-4">
+            <motion.ul variants={listVariants} initial="hidden" animate="show" className="space-y-4">
               {data.projects.map((p) => (
-                <li key={p.id}>
-                  <Link href={`/projects/${p.id}`} className="focus-ring block rounded-md">
+                <motion.li key={p.id} variants={itemVariants}>
+                  <Link href={`/projects/${p.id}`} className="focus-ring group block rounded-md">
                     <div className="mb-1.5 flex items-center justify-between text-sm">
-                      <span className="font-medium">{p.name}</span>
+                      <span className="font-medium group-hover:text-accent-600">{p.name}</span>
                       <span className="tabular text-[13px] text-muted">{p.progress}%</span>
                     </div>
                     <ProgressBar value={p.progress} />
@@ -143,9 +104,9 @@ export default function DashboardPage() {
                       {p.done} done · {p.counts.IN_PROGRESS} in progress · {p.counts.HOLD} on hold
                     </div>
                   </Link>
-                </li>
+                </motion.li>
               ))}
-            </ul>
+            </motion.ul>
           )}
         </Card>
       </div>

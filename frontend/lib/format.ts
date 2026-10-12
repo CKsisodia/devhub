@@ -1,16 +1,46 @@
-import type { BacklogStatus, LearningType, ProjectStatus } from "./types";
+import type { LearningType, PocOutcome, ProjectStatus, WorkStatus } from "./types";
 
-export const STATUSES: BacklogStatus[] = ["IN_PROGRESS", "HOLD", "DONE", "REJECT"];
+export const STATUSES: WorkStatus[] = ["TODO", "IN_PROGRESS", "DONE", "HOLD", "REJECT"];
 export const PROJECT_STATUSES: ProjectStatus[] = ["ACTIVE", "ON_HOLD", "COMPLETED"];
 export const LEARNING_TYPES: LearningType[] = ["BLOG", "ARTICLE", "NEWS"];
 
-export const STATUS_LABEL: Record<BacklogStatus, string> = { IN_PROGRESS: "In progress", HOLD: "Hold", DONE: "Done", REJECT: "Reject" };
-export const STATUS_STYLE: Record<BacklogStatus, { bg: string; text: string; dot: string }> = {
+export const STATUS_LABEL: Record<WorkStatus, string> = { TODO: "To do", IN_PROGRESS: "In progress", DONE: "Done", HOLD: "Hold", REJECT: "Reject" };
+/** Pill = tinted background + dark text + dot (design brief 2.4); every text/background pair passes WCAG AA. */
+export const STATUS_STYLE: Record<WorkStatus, { bg: string; text: string; dot: string }> = {
+  TODO: { bg: "#DBEAFE", text: "#1E40AF", dot: "#3B82F6" },
   IN_PROGRESS: { bg: "#FEF3C7", text: "#92400E", dot: "#F59E0B" },
-  HOLD: { bg: "#E0F2FE", text: "#075985", dot: "#0EA5E9" },
   DONE: { bg: "#DCFCE7", text: "#166534", dot: "#22C55E" },
+  HOLD: { bg: "#F1F5F9", text: "#334155", dot: "#94A3B8" },
   REJECT: { bg: "#FEE2E2", text: "#991B1B", dot: "#EF4444" },
 };
+export const OUTCOMES: PocOutcome[] = ["ADOPT", "DROP", "NEEDS_MORE_WORK"];
+export const OUTCOME_LABEL: Record<PocOutcome, string> = { ADOPT: "Adopt", DROP: "Drop", NEEDS_MORE_WORK: "Needs more work" };
+export const OUTCOME_STYLE: Record<PocOutcome, { bg: string; text: string; dot: string }> = {
+  ADOPT: { bg: "#DCFCE7", text: "#166534", dot: "#16A34A" },
+  DROP: { bg: "#FEE2E2", text: "#991B1B", dot: "#DC2626" },
+  NEEDS_MORE_WORK: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706" },
+};
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** Roadmap period "2026-Q4" -> "Q4 2026", "2026-11" -> "Nov 2026". */
+export function formatPeriod(p: string | null | undefined) {
+  if (!p) return "";
+  const [y, rest] = p.split("-");
+  return rest.startsWith("Q") ? `${rest} ${y}` : `${MONTHS[Number(rest) - 1]} ${y}`;
+}
+/** Sort key: months and quarters on one axis (a quarter sorts at its last month); no period sorts last. */
+export function periodKey(p: string | null | undefined) {
+  if (!p) return Number.MAX_SAFE_INTEGER;
+  const [y, rest] = p.split("-");
+  const month = rest.startsWith("Q") ? Number(rest.slice(1)) * 3 : Number(rest);
+  return Number(y) * 100 + month;
+}
+/** Days from today until a YYYY-MM-DD date (negative = past). */
+export function daysUntil(ymd: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((new Date(`${ymd}T00:00:00`).getTime() - today.getTime()) / 86_400_000);
+}
 export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = { ACTIVE: "Active", ON_HOLD: "On hold", COMPLETED: "Completed" };
 export const PROJECT_STATUS_STYLE: Record<ProjectStatus, { bg: string; text: string; dot: string }> = {
   ACTIVE: { bg: "#F4F4F5", text: "#3F3F46", dot: "#71717A" },

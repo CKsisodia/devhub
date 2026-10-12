@@ -10,7 +10,8 @@ import { sessionAuthenticate } from "./auth/middleware.js";
 import { meRouter } from "./routes/me.js";
 import { usersRouter } from "./routes/users.js";
 import { dashboardRouter } from "./routes/dashboard.js";
-import { backlogRouter } from "./routes/backlog.js";
+import { workItemsRouter } from "./routes/workItems.js";
+import { WORK_TYPE_META, WORK_TYPES } from "./lib/workTypes.js";
 import { aiRouter } from "./routes/ai.js";
 import { projectsRouter } from "./routes/projects.js";
 import { learningRouter } from "./routes/learning.js";
@@ -22,7 +23,8 @@ export const apiMounts: [string, Router][] = [
   ["/me", meRouter],
   ["/users", usersRouter],
   ["/dashboard", dashboardRouter],
-  ["/backlog", backlogRouter],
+  // Tasks, Roadmap, R&D, POC: one generic router per section
+  ...WORK_TYPES.map((t) => [`/${WORK_TYPE_META[t].path}`, workItemsRouter(t)] as [string, Router]),
   ["/ai", aiRouter],
   ["/projects", projectsRouter],
   ["/learning", learningRouter],
@@ -32,11 +34,13 @@ export const apiMounts: [string, Router][] = [
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+const WORK_PATHS = WORK_TYPES.map((t) => WORK_TYPE_META[t].path).join("|");
+
 /**
- * The ONLY mutations a viewer may make (product decision, requirements v1.2): changing a backlog item's
- * status. Everything else that writes is admin-only.
+ * The ONLY mutations a viewer may make (product decision, requirements v1.2/v1.3): changing the status of
+ * an item in Tasks, Roadmap, R&D or POC. Everything else that writes is admin-only.
  */
-export const VIEWER_ALLOWED_MUTATIONS: { method: string; pattern: RegExp }[] = [{ method: "PATCH", pattern: /^\/backlog\/[^/]+\/status\/?$/ }];
+export const VIEWER_ALLOWED_MUTATIONS: { method: string; pattern: RegExp }[] = [{ method: "PATCH", pattern: new RegExp(`^/(${WORK_PATHS})/[^/]+/status/?$`) }];
 
 /**
  * Defence in depth: viewers are read-only everywhere except the allow-list above, so any other mutating

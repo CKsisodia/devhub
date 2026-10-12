@@ -52,7 +52,7 @@ export const config = {
     apiKey: process.env.LLM_API_KEY || undefined,
     baseUrl: str("LLM_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, ""),
     model: str("LLM_MODEL", "gpt-4o-mini"),
-    /** When true and no API key is set, a deterministic mock drafts backlog items (dev only). */
+    /** When true and no API key is set, a deterministic mock drafts work items (dev only). */
     mock: bool("LLM_MOCK", false),
   },
 

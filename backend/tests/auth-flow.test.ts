@@ -100,17 +100,21 @@ describe.skipIf(!hasDb)("sign-in flow: email + password + TOTP (database)", () =
     const me = await agent.get("/api/me");
     expect(me.status).toBe(200);
     expect(me.body.user).toMatchObject({ email, role: "viewer" });
-    expect((await agent.post("/api/backlog").send({ title: "x" })).status).toBe(403); // viewers can't add items
-    // ...but they can change a backlog item's status
-    const item = await prisma.backlogItem.findFirst({ select: { id: true, status: true } });
-    if (item) {
+    // viewers can't add items in any work section...
+    for (const path of ["tasks", "roadmap", "rnd", "poc"]) expect((await agent.post(`/api/${path}`).send({ title: "x" })).status).toBe(403);
+    // ...but they can change the status of an item in every section (and only through its own section's URL)
+    for (const [type, path] of [["TASK", "tasks"], ["ROADMAP", "roadmap"], ["RND", "rnd"], ["POC", "poc"]] as const) {
+      const item = await prisma.workItem.findFirst({ where: { type }, select: { id: true, status: true } });
+      if (!item) continue;
       const next = item.status === "DONE" ? "HOLD" : "DONE";
-      const res = await agent.patch(`/api/backlog/${item.id}/status`).send({ status: next });
+      const res = await agent.patch(`/api/${path}/${item.id}/status`).send({ status: next });
       expect(res.status).toBe(200);
       expect(res.body.status).toBe(next);
-      await prisma.backlogItem.update({ where: { id: item.id }, data: { status: item.status } });
-      await prisma.activityLog.deleteMany({ where: { userId, entityType: "backlog" } });
+      const wrongSection = path === "tasks" ? "poc" : "tasks";
+      expect((await agent.patch(`/api/${wrongSection}/${item.id}/status`).send({ status: "TODO" })).status).toBe(404);
+      await prisma.workItem.update({ where: { id: item.id }, data: { status: item.status } });
     }
+    await prisma.activityLog.deleteMany({ where: { userId } });
   });
 
   it("signs out", async () => {

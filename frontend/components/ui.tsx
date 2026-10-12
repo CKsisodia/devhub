@@ -5,8 +5,10 @@ import { twMerge } from "tailwind-merge";
 import { Loader2, X, type LucideIcon } from "lucide-react";
 import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { initials, PROJECT_STATUS_LABEL, PROJECT_STATUS_STYLE, STATUS_LABEL, STATUS_STYLE } from "@/lib/format";
-import type { BacklogStatus, ProjectStatus } from "@/lib/types";
+import type { ProjectStatus, WorkStatus } from "@/lib/types";
+import { EASE } from "./motion";
 
 export const cn = (...inputs: ClassValue[]) => twMerge(clsx(inputs));
 
@@ -29,12 +31,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       disabled={disabled || loading}
       className={cn(
-        "focus-ring inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all duration-150 ease-out-soft disabled:cursor-not-allowed disabled:opacity-50",
+        "focus-ring inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all duration-150 ease-out-soft active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
         size === "s" && "h-8 px-3",
         size === "m" && "h-9 px-3.5",
         size === "l" && "h-11 px-5",
-        variant === "primary" && "bg-ai text-white shadow-xs hover:brightness-110 active:brightness-95",
-        variant === "secondary" && "bg-subtle text-ink hover:bg-zinc-200/70 active:bg-zinc-200",
+        variant === "primary" && "bg-ai text-white shadow-xs hover:shadow-ai-glow hover:brightness-110 active:brightness-95",
+        variant === "secondary" && "border border-line/80 bg-white/80 text-ink shadow-xs hover:border-line-strong hover:bg-white active:bg-subtle",
         variant === "ghost" && "text-secondary hover:bg-subtle hover:text-ink",
         variant === "destructive" && "bg-red-600 text-white hover:bg-red-700",
         className,
@@ -49,7 +51,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 export function IconButton({ icon: Icon, label, className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string }) {
   return (
-    <button type="button" aria-label={label} title={label} className={cn("focus-ring inline-flex size-8 items-center justify-center rounded-md text-secondary transition hover:bg-subtle hover:text-ink", className)} {...rest}>
+    <button type="button" aria-label={label} title={label} className={cn("focus-ring inline-flex size-8 items-center justify-center rounded-md text-secondary transition hover:bg-subtle hover:text-ink active:scale-95", className)} {...rest}>
       <Icon className="size-4" strokeWidth={1.75} />
     </button>
   );
@@ -88,10 +90,11 @@ export function Field({ label, htmlFor, helper, error, children, className }: { 
 }
 
 // ---------- Display ----------
-export function Card({ className, children, onClick, as = "div" }: { className?: string; children: ReactNode; onClick?: () => void; as?: "div" | "section" }) {
+/** Frosted glass card (translucent white over the aurora background). */
+export function Card({ className, children, onClick, as = "div", interactive }: { className?: string; children: ReactNode; onClick?: () => void; as?: "div" | "section"; interactive?: boolean }) {
   const Tag = as;
   return (
-    <Tag onClick={onClick} className={cn("rounded-lg border border-line/70 bg-surface p-5 shadow-sm", onClick && "cursor-pointer transition hover:shadow-md", className)}>
+    <Tag onClick={onClick} className={cn("glass-card rounded-xl p-5", (onClick || interactive) && "lift cursor-pointer", className)}>
       {children}
     </Tag>
   );
@@ -106,7 +109,7 @@ export function Pill({ bg, text, dot, children, className }: { bg: string; text:
   );
 }
 
-export const StatusPill = ({ status }: { status: BacklogStatus }) => <Pill {...STATUS_STYLE[status]}>{STATUS_LABEL[status]}</Pill>;
+export const StatusPill = ({ status }: { status: WorkStatus }) => <Pill {...STATUS_STYLE[status]}>{STATUS_LABEL[status]}</Pill>;
 export const ProjectStatusPill = ({ status }: { status: ProjectStatus }) => <Pill {...PROJECT_STATUS_STYLE[status]}>{PROJECT_STATUS_LABEL[status]}</Pill>;
 
 export function Chip({ children, selected, onClick, onRemove, className }: { children: ReactNode; selected?: boolean; onClick?: () => void; onRemove?: () => void; className?: string }) {
@@ -170,41 +173,51 @@ export function AvatarGroup({ users, max = 3 }: { users: { id: string; name: str
 export function ProgressBar({ value, className }: { value: number; className?: string }) {
   return (
     <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-subtle", className)} role="progressbar" aria-valuenow={value} aria-valuemin={0} aria-valuemax={100}>
-      <div className="bg-ai h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+      <motion.div className="bg-ai h-full rounded-full" initial={{ width: 0 }} animate={{ width: `${Math.min(100, Math.max(0, value))}%` }} transition={{ duration: 0.8, ease: EASE }} />
     </div>
   );
 }
 
 export function EmptyState({ icon: Icon, title, text, action }: { icon: LucideIcon; title: string; text?: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      <span className="mb-4 inline-flex size-12 items-center justify-center rounded-full bg-accent-50 text-accent-600">
-        <Icon className="size-5" strokeWidth={1.5} />
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex flex-col items-center justify-center px-6 py-14 text-center">
+      <span className="relative mb-5 inline-flex">
+        <span aria-hidden className="bg-ai absolute inset-0 -z-10 scale-150 rounded-full opacity-20 blur-xl" />
+        <span className="animate-float inline-flex size-14 items-center justify-center rounded-2xl border border-white/70 bg-white/80 text-accent-600 shadow-ai-glow">
+          <Icon className="size-6" strokeWidth={1.5} />
+        </span>
       </span>
       <h3 className="text-base font-semibold">{title}</h3>
       {text && <p className="mt-1 max-w-sm text-sm text-muted">{text}</p>}
       {action && <div className="mt-5">{action}</div>}
-    </div>
+    </motion.div>
   );
 }
 
 export const Skeleton = ({ className }: { className?: string }) => <div className={cn("skeleton h-4", className)} />;
 
-export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions, icon: Icon, tint }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; icon?: LucideIcon; tint?: { bg: string; fg: string } }) {
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-[-0.01em]">{title}</h1>
+      <div className="flex min-w-0 items-start gap-3">
+        {Icon && (
+          <span className="mt-0.5 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/70 shadow-sm" style={{ background: tint?.bg ?? "#EDE9FE", color: tint?.fg ?? "#6D28D9" }}>
+            <Icon className="size-5" strokeWidth={1.75} />
+          </span>
+        )}
+        <div className="min-w-0">
+        <h1 className="text-2xl font-semibold tracking-[-0.015em]">{title}</h1>
         {subtitle && <div className="mt-1 text-sm text-muted">{subtitle}</div>}
+        </div>
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
-export function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: string; icon?: LucideIcon }[]; label: string }) {
+export function Segmented<T extends string>({ value, onChange, options, label, id = "seg" }: { value: T; onChange: (v: T) => void; options: { value: T; label: string; icon?: LucideIcon; count?: number }[]; label: string; id?: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-md bg-subtle p-0.5">
+    <div role="radiogroup" aria-label={label} className="inline-flex max-w-full overflow-x-auto rounded-lg bg-zinc-100/80 p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
@@ -212,10 +225,14 @@ export function Segmented<T extends string>({ value, onChange, options, label }:
           aria-checked={value === o.value}
           type="button"
           onClick={() => onChange(o.value)}
-          className={cn("focus-ring inline-flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-sm font-medium transition", value === o.value ? "bg-surface text-ink shadow-xs" : "text-secondary hover:text-ink")}
+          className={cn("focus-ring relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors", value === o.value ? "text-ink" : "text-secondary hover:text-ink")}
         >
-          {o.icon && <o.icon className="size-4" strokeWidth={1.75} />}
-          {o.label}
+          {value === o.value && <motion.span layoutId={`${id}-pill`} className="absolute inset-0 rounded-md bg-white shadow-xs" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+          <span className="relative inline-flex items-center gap-1.5">
+            {o.icon && <o.icon className="size-4" strokeWidth={1.75} />}
+            {o.label}
+            {o.count !== undefined && <span className="tabular text-xs text-muted">{o.count}</span>}
+          </span>
         </button>
       ))}
     </div>
@@ -232,10 +249,11 @@ export function Tabs<T extends string>({ value, onChange, tabs }: { value: T; on
           aria-selected={value === t.value}
           type="button"
           onClick={() => onChange(t.value)}
-          className={cn("focus-ring -mb-px flex h-10 items-center gap-1.5 whitespace-nowrap border-b-2 text-sm font-medium transition", value === t.value ? "border-accent-600 text-ink" : "border-transparent text-muted hover:text-ink")}
+          className={cn("focus-ring relative -mb-px flex h-10 items-center gap-1.5 whitespace-nowrap text-sm font-medium transition-colors", value === t.value ? "text-ink" : "text-muted hover:text-ink")}
         >
           {t.label}
           {t.count !== undefined && <span className="tabular rounded-full bg-subtle px-1.5 text-xs text-secondary">{t.count}</span>}
+          {value === t.value && <motion.span layoutId="tab-underline" className="bg-ai absolute inset-x-0 -bottom-px h-0.5 rounded-full" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
         </button>
       ))}
     </div>
@@ -261,19 +279,39 @@ function Portal({ children }: { children: ReactNode }) {
 
 export function Modal({ open, onClose, title, children, footer, wide }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   useEscape(onClose, open);
-  if (!open) return null;
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,9,11,0.32)] sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-        <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} className={cn("glass animate-in flex max-h-[92vh] w-full flex-col rounded-t-xl shadow-lg sm:rounded-xl", wide ? "sm:max-w-3xl" : "sm:max-w-[560px]")}>
-          <div className="flex items-center justify-between px-6 pb-2 pt-5">
-            <h2 className="text-base font-semibold">{title}</h2>
-            <IconButton icon={X} label="Close" onClick={onClose} />
-          </div>
-          <div className="overflow-y-auto px-6 py-3">{children}</div>
-          {footer && <div className="flex justify-end gap-2 px-6 pb-5 pt-3">{footer}</div>}
-        </div>
-      </div>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            key="modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,9,11,0.32)] backdrop-blur-[2px] sm:items-center sm:p-6"
+            onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label={typeof title === "string" ? title : undefined}
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: EASE }}
+              className={cn("glass flex max-h-[92vh] w-full flex-col rounded-t-2xl shadow-lg sm:rounded-2xl", wide ? "sm:max-w-3xl" : "sm:max-w-[560px]")}
+            >
+              <div className="flex items-center justify-between px-6 pb-2 pt-5">
+                <h2 className="text-base font-semibold">{title}</h2>
+                <IconButton icon={X} label="Close" onClick={onClose} />
+              </div>
+              <div className="overflow-y-auto px-6 py-3">{children}</div>
+              {footer && <div className="flex justify-end gap-2 px-6 pb-5 pt-3">{footer}</div>}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Portal>
   );
 }
@@ -318,8 +356,16 @@ export function Menu({ trigger, items, align = "right" }: { trigger: (props: { o
   return (
     <div ref={ref} className="relative">
       {trigger({ onClick: () => setOpen((o) => !o), "aria-expanded": open })}
+      <AnimatePresence>
       {open && (
-        <div role="menu" className={cn("glass animate-in absolute z-40 mt-1 min-w-44 rounded-lg p-1 shadow-md", align === "right" ? "right-0" : "left-0")}>
+        <motion.div
+          role="menu"
+          initial={{ opacity: 0, y: -4, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -4, scale: 0.97 }}
+          transition={{ duration: 0.14, ease: EASE }}
+          className={cn("glass absolute z-40 mt-1 min-w-44 origin-top-right rounded-xl p-1 shadow-md", align === "right" ? "right-0" : "left-0")}
+        >
           {items.map((it) => (
             <button
               key={it.label}
@@ -335,8 +381,9 @@ export function Menu({ trigger, items, align = "right" }: { trigger: (props: { o
               {it.label}
             </button>
           ))}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

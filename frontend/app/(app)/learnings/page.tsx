@@ -45,7 +45,7 @@ export default function LearningPage() {
   return (
     <>
       <PageHeader
-        title="Learning"
+        title="Learnings"
         subtitle="Blogs, articles and news curated for the team."
         actions={
           isAdmin && (
@@ -96,7 +96,7 @@ export default function LearningPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((i) => {
-            const href = i.url ?? `/learning/${i.id}`;
+            const href = i.url ?? `/learnings/${i.id}`;
             return (
               <Card key={i.id} className="group relative flex flex-col transition hover:shadow-md">
                 <div className="mb-2 flex items-center justify-between">

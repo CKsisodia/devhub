@@ -1,14 +1,16 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
 import { forbidden, notFound } from "../lib/errors.js";
-import { backlogDto, backlogInclude } from "../lib/dto.js";
-import { statusCounts } from "../lib/stats.js";
+import { workItemDto, workItemInclude } from "../lib/dto.js";
+import { countsByType, statusCounts } from "../lib/stats.js";
+import { WORK_ENTITY_TYPES } from "../lib/workTypes.js";
 
 export const dashboardRouter = Router();
 
 /**
- * User-wise dashboard: backlog items in the projects the user is a member of, plus items not tied to any
- * project. Viewers see only their own; the admin can pass ?userId= to see anyone's.
+ * User-wise dashboard across the four work sections (Tasks, Roadmap, R&D, POC): items in the projects the
+ * user is a member of, plus items not tied to any project. Viewers see only their own; the admin can pass
+ * ?userId= to see anyone's.
  */
 dashboardRouter.get("/", async (req, res) => {
   const me = req.user!;
@@ -20,24 +22,24 @@ dashboardRouter.get("/", async (req, res) => {
 
   const memberships = await prisma.projectMember.findMany({
     where: { userId: user.id, project: { archived: false } },
-    include: { project: { include: { backlogItems: { select: { status: true } } } } },
+    include: { project: { include: { workItems: { select: { status: true } } } } },
   });
   const projectIds = memberships.map((m) => m.projectId);
 
-  const items = await prisma.backlogItem.findMany({
+  const items = await prisma.workItem.findMany({
     where: { OR: [{ projectId: { in: projectIds } }, { projectId: null }] },
-    include: backlogInclude,
+    include: workItemInclude,
     orderBy: { updatedAt: "desc" },
   });
 
   const projects = memberships
-    .map(({ project: p }) => ({ id: p.id, name: p.name, status: p.status, ...statusCounts(p.backlogItems) }))
+    .map(({ project: p }) => ({ id: p.id, name: p.name, status: p.status, ...statusCounts(p.workItems) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const activity = await prisma.activityLog.findMany({
     where: {
-      entityType: { in: ["backlog", "doc"] },
-      OR: [{ projectId: { in: projectIds } }, { entityType: "backlog", projectId: null }],
+      entityType: { in: [...WORK_ENTITY_TYPES, "doc"] },
+      OR: [{ projectId: { in: projectIds } }, { entityType: { in: WORK_ENTITY_TYPES }, projectId: null }],
     },
     include: { user: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
@@ -46,9 +48,11 @@ dashboardRouter.get("/", async (req, res) => {
 
   res.json({
     user,
+    byType: countsByType(items),
     counts: statusCounts(items).counts,
-    inProgress: items.filter((i) => i.status === "IN_PROGRESS").slice(0, 8).map(backlogDto),
-    onHold: items.filter((i) => i.status === "HOLD").slice(0, 5).map(backlogDto),
+    inProgress: items.filter((i) => i.status === "IN_PROGRESS").slice(0, 8).map(workItemDto),
+    upNext: items.filter((i) => i.status === "TODO").slice(0, 5).map(workItemDto),
+    onHold: items.filter((i) => i.status === "HOLD").slice(0, 5).map(workItemDto),
     projects,
     activity: activity.map((a) => ({
       id: a.id,

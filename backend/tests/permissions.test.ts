@@ -42,22 +42,28 @@ function mutatingRoutes() {
 }
 
 const all = mutatingRoutes();
-const STATUS_ROUTE = { method: "patch", path: "/api/backlog/11111111-1111-4111-8111-111111111111/status" };
+const ID = "11111111-1111-4111-8111-111111111111";
+const SECTIONS = ["tasks", "roadmap", "rnd", "poc"];
+const STATUS_ROUTES = SECTIONS.map((s) => ({ method: "patch", path: `/api/${s}/${ID}/status` }));
+const STATUS_ROUTE = STATUS_ROUTES[0];
 const viewerAllowed = (r: { method: string; path: string }) =>
   VIEWER_ALLOWED_MUTATIONS.some((m) => m.method.toLowerCase() === r.method && m.pattern.test(r.path.replace(/^\/api/, "")));
-/** Every mutating route except the viewer allow-list (backlog status change). */
+/** Every mutating route except the viewer allow-list (status change in the four work sections). */
 const routes = all.filter((r) => !viewerAllowed(r));
 
 describe("permissions", () => {
   it("discovers all mutating routes", () => {
-    // users(4) + backlog(4) + ai(1) + projects(5) + learning(3) + docs(3) + uploads(1)
-    expect(all.length).toBeGreaterThanOrEqual(22);
-    expect(routes.length).toBe(all.length - 1);
-    expect(routes).toContainEqual({ method: "post", path: "/api/backlog/bulk" });
-    expect(routes).toContainEqual({ method: "patch", path: "/api/backlog/11111111-1111-4111-8111-111111111111" });
-    expect(routes).toContainEqual({ method: "delete", path: "/api/backlog/11111111-1111-4111-8111-111111111111" });
-    expect(routes).toContainEqual({ method: "post", path: "/api/users/11111111-1111-4111-8111-111111111111/reset-totp" });
-    expect(routes).toContainEqual({ method: "post", path: "/api/users/11111111-1111-4111-8111-111111111111/reset-password" });
+    // users(4) + 4 work sections x 5 + ai(1) + projects(5) + learning(3) + docs(3) + uploads(1)
+    expect(all.length).toBeGreaterThanOrEqual(37);
+    expect(routes.length).toBe(all.length - 4);
+    for (const s of SECTIONS) {
+      expect(routes).toContainEqual({ method: "post", path: `/api/${s}` });
+      expect(routes).toContainEqual({ method: "post", path: `/api/${s}/bulk` });
+      expect(routes).toContainEqual({ method: "patch", path: `/api/${s}/${ID}` });
+      expect(routes).toContainEqual({ method: "delete", path: `/api/${s}/${ID}` });
+    }
+    expect(routes).toContainEqual({ method: "post", path: `/api/users/${ID}/reset-totp` });
+    expect(routes).toContainEqual({ method: "post", path: `/api/users/${ID}/reset-password` });
     expect(routes).toContainEqual({ method: "post", path: "/api/ai/draft" });
   });
 
@@ -75,8 +81,13 @@ describe("permissions", () => {
   });
 
   it("admin passes the permission check (reaches validation)", async () => {
-    const res = await request(app).post("/api/backlog").set("x-test-user", "admin").send({});
+    for (const s of SECTIONS) expect((await request(app).post(`/api/${s}`).set("x-test-user", "admin").send({})).status).toBe(400);
+  });
+
+  it("admin can't send fields that don't belong to a section (reaches validation, 400)", async () => {
+    const res = await request(app).post("/api/tasks").set("x-test-user", "admin").send({ title: "x", outcome: "ADOPT" });
     expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/outcome/);
   });
 
   it("viewer cannot open another user's dashboard", async () => {
@@ -85,22 +96,26 @@ describe("permissions", () => {
   });
 
   it("viewer is blocked even on an unknown mutating path", async () => {
-    const res = await request(app).put("/api/backlog/anything").set("x-test-user", "viewer").send({});
+    const res = await request(app).put("/api/tasks/anything").set("x-test-user", "viewer").send({});
     expect(res.status).toBe(403);
   });
 
-  it("the ONLY mutation open to viewers is the backlog status change", () => {
-    expect(all.filter(viewerAllowed)).toEqual([STATUS_ROUTE]);
+  it("the ONLY mutations open to viewers are the status changes in Tasks, Roadmap, R&D and POC", () => {
+    expect(all.filter(viewerAllowed)).toEqual(STATUS_ROUTES);
   });
 
-  it("viewer passes the permission check for a status change (reaches validation)", async () => {
-    const res = await request(app).patch(STATUS_ROUTE.path).set("x-test-user", "viewer").send({ status: "SHIPPED" });
+  it.each(STATUS_ROUTES)("viewer passes the permission check for a status change on $path (reaches validation)", async ({ path }) => {
+    const res = await request(app).patch(path).set("x-test-user", "viewer").send({ status: "SHIPPED" });
     expect(res.status).toBe(400);
   });
 
-  it("viewer still can't change status through the full edit endpoint", async () => {
-    const res = await request(app).patch("/api/backlog/11111111-1111-4111-8111-111111111111").set("x-test-user", "viewer").send({ status: "DONE" });
+  it.each(SECTIONS)("viewer still can't change status through the full edit endpoint of %s", async (s) => {
+    const res = await request(app).patch(`/api/${s}/${ID}`).set("x-test-user", "viewer").send({ status: "DONE" });
     expect(res.status).toBe(403);
+  });
+
+  it("the old /api/backlog routes are gone", async () => {
+    expect((await request(app).get("/api/backlog").set("x-test-user", "admin")).status).toBe(404);
   });
 
   it("status change still requires sign-in", async () => {
@@ -113,7 +128,7 @@ describe("permissions", () => {
   });
 
   it("blocks cross-site mutating requests by Origin", async () => {
-    const res = await request(app).post("/api/backlog").set("x-test-user", "admin").set("Origin", "https://evil.example").send({ title: "x" });
+    const res = await request(app).post("/api/tasks").set("x-test-user", "admin").set("Origin", "https://evil.example").send({ title: "x" });
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/cross-site/i);
   });
