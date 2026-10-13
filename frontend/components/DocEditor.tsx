@@ -62,7 +62,7 @@ function TextBlock({ value, onChange }: { value: string; onChange: (v: string) =
 function MermaidBlock({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div className="grid gap-3 lg:grid-cols-2">
-      <Textarea aria-label="Mermaid code" spellCheck={false} wrap="off" value={value} onChange={(e) => onChange(e.target.value)} rows={Math.min(20, Math.max(8, value.split("\n").length + 1))} className="overflow-x-auto whitespace-pre bg-zinc-950 font-mono text-[13px] text-zinc-100" />
+      <Textarea aria-label="Mermaid code" spellCheck={false} wrap="off" value={value} onChange={(e) => onChange(e.target.value)} rows={Math.min(20, Math.max(8, value.split("\n").length + 1))} className="overflow-x-auto whitespace-pre bg-[var(--code-bg)] font-mono text-[13px] text-[var(--code-fg)]" />
       <div>
         <MermaidView code={value} compact />
       </div>

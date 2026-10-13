@@ -13,7 +13,7 @@ Microsoft Authenticator, Authy, 1Password…). There is no self sign-up: the adm
 email and temporary password. On first sign-in each person scans a QR code to set up the authenticator app
 and then chooses their own password.
 
-> Built to the MVP in *Frontend Developer Panel: Requirements v1.3* and the *UI Design Brief v1.0*.
+> Built to the MVP in *Frontend Developer Panel: Requirements v1.4* and the *UI Design Brief v1.0*.
 > All names, emails and passwords in the seed data are fake development values.
 
 ## Folder structure
@@ -230,14 +230,31 @@ for 2 weeks"*, *"POC for a feature flag service, 3 weeks"*, or *"Mark all Checko
    then clicks **Confirm and save**. Only then does `POST /api/<s>/bulk` write anything, in a single
    transaction, with activity log entries.
 
-## UI and motion
+## UI, theme and motion
 
-Glass surfaces over a soft aurora background, gradient borders and glow on AI elements, an animated AI
-prompt (shimmering border, thinking state, streaming-style draft reveal), a collapsible sidebar (state kept in
-`localStorage`) with an animated active indicator, page transitions and staggered list entrances (`motion`),
-animated status pills, skeleton shimmer and empty states. **Cmd/Ctrl+K** opens a command palette that only
-navigates (pages, Users for the admin, projects). On phones the sidebar becomes a slide-in drawer. Everything
-honours `prefers-reduced-motion` (`MotionConfig reducedMotion="user"` plus a CSS reduced-motion block).
+**Colours** are design tokens in `frontend/app/globals.css`: the light values in `@theme`, dark overrides in
+`.dark`, and pill/tint colours as `--tone-<name>-bg|fg|dot` variables (used through `tone()` in
+`lib/format.ts`). Change the palette there only. The current palette, "Lagoon", has these values:
+
+| Token | Light | Dark |
+|---|---|---|
+| AI / primary gradient | `#047857 → #0F766E → #0E7490` | same (white text ≥ 5.3:1) |
+| Accent text / icon | `#0F766E` / `#0D9488` | `#5EEAD4` / `#2DD4BF` |
+| Highlight (amber) | `#F59E0B` | `#FBBF24` |
+| Canvas / surface | `#F8FAFC` / `#FFFFFF` | `#070D17` / `#0F1724` |
+| Ink / muted | `#0F172A` / `#596A7F` | `#E7EEF7` / `#8A9AB2` |
+
+**Light / dark / system:** the toggle sits in the header (and on the sign-in page). `next-themes` stores the
+choice in `localStorage` (`devhub.theme`) and sets the `dark` class on `<html>` before the first paint, so
+there is no flash. Mermaid and Recharts get per-theme colours in JS (`MermaidView.tsx`, `ChartBlock.tsx`) and
+re-render when the theme changes.
+
+Glass surfaces sit over a soft aurora background, AI elements get gradient borders and glow, and the AI
+prompt is animated (shimmering border, thinking state, streaming-style draft reveal). The collapsible sidebar
+keeps its state in `localStorage` and has an animated active indicator. Pages transition and lists enter
+staggered (`motion`), with animated status pills, skeleton shimmer and empty states. **Cmd/Ctrl+K** opens a
+navigation-only command palette (pages, Users for the admin, projects); there is no search field in the
+header. On phones the sidebar becomes a slide-in drawer. Everything honours `prefers-reduced-motion`.
 
 ## Docs content format
 

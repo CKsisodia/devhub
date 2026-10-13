@@ -115,7 +115,7 @@ export function LearningForm({ item, onClose, onSaved, suggestedTags }: { item?:
           <TagInput id="l-tags" value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
         </Field>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={form.pinned} onChange={(e) => setForm({ ...form, pinned: e.target.checked })} className="size-4 accent-violet-600" />
+          <input type="checkbox" checked={form.pinned} onChange={(e) => setForm({ ...form, pinned: e.target.checked })} className="size-4 accent-accent-500" />
           Pin to top
         </label>
       </div>

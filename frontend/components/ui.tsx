@@ -36,9 +36,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         size === "m" && "h-9 px-3.5",
         size === "l" && "h-11 px-5",
         variant === "primary" && "bg-ai text-white shadow-xs hover:shadow-ai-glow hover:brightness-110 active:brightness-95",
-        variant === "secondary" && "border border-line/80 bg-white/80 text-ink shadow-xs hover:border-line-strong hover:bg-white active:bg-subtle",
+        variant === "secondary" && "border border-line/80 bg-surface/80 text-ink shadow-xs hover:border-line-strong hover:bg-surface active:bg-subtle",
         variant === "ghost" && "text-secondary hover:bg-subtle hover:text-ink",
-        variant === "destructive" && "bg-red-600 text-white hover:bg-red-700",
+        variant === "destructive" && "bg-[var(--danger-solid)] text-white hover:brightness-110",
         className,
       )}
       {...rest}
@@ -136,8 +136,9 @@ export function Chip({ children, selected, onClick, onRemove, className }: { chi
   );
 }
 
-const AVATAR_TINTS = ["#EDE9FE", "#DBEAFE", "#DCFCE7", "#FEF3C7", "#FCE7F3", "#E0F2FE", "#FFEDD5"];
-const AVATAR_TEXT = ["#5B21B6", "#1E40AF", "#166534", "#92400E", "#9D174D", "#075985", "#9A3412"];
+const AVATAR_TONES = ["accent", "cyan", "success", "warning", "rose", "info", "orange"];
+const AVATAR_TINTS = AVATAR_TONES.map((t) => `var(--tone-${t}-bg)`);
+const AVATAR_TEXT = AVATAR_TONES.map((t) => `var(--tone-${t}-fg)`);
 function hashIndex(s: string) {
   let h = 0;
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -149,7 +150,7 @@ export function Avatar({ name, size = 32, inactive, className }: { name: string;
   return (
     <span
       title={name}
-      className={cn("inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold ring-2 ring-white", inactive && "grayscale opacity-60", className)}
+      className={cn("inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold ring-2 ring-surface", inactive && "grayscale opacity-60", className)}
       style={{ width: size, height: size, fontSize: size === 24 ? 10 : size === 32 ? 12 : 14, background: AVATAR_TINTS[i], color: AVATAR_TEXT[i] }}
     >
       {initials(name)}
@@ -165,7 +166,7 @@ export function AvatarGroup({ users, max = 3 }: { users: { id: string; name: str
       {shown.map((u) => (
         <Avatar key={u.id} name={u.name} size={24} inactive={u.active === false} />
       ))}
-      {extra > 0 && <span className="inline-flex size-6 items-center justify-center rounded-full bg-subtle text-[10px] font-semibold text-secondary ring-2 ring-white">+{extra}</span>}
+      {extra > 0 && <span className="inline-flex size-6 items-center justify-center rounded-full bg-subtle text-[10px] font-semibold text-secondary ring-2 ring-surface">+{extra}</span>}
     </div>
   );
 }
@@ -183,7 +184,7 @@ export function EmptyState({ icon: Icon, title, text, action }: { icon: LucideIc
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex flex-col items-center justify-center px-6 py-14 text-center">
       <span className="relative mb-5 inline-flex">
         <span aria-hidden className="bg-ai absolute inset-0 -z-10 scale-150 rounded-full opacity-20 blur-xl" />
-        <span className="animate-float inline-flex size-14 items-center justify-center rounded-2xl border border-white/70 bg-white/80 text-accent-600 shadow-ai-glow">
+        <span className="animate-float inline-flex size-14 items-center justify-center rounded-2xl border border-line/70 bg-surface/80 text-accent-600 shadow-ai-glow">
           <Icon className="size-6" strokeWidth={1.5} />
         </span>
       </span>
@@ -201,7 +202,7 @@ export function PageHeader({ title, subtitle, actions, icon: Icon, tint }: { tit
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div className="flex min-w-0 items-start gap-3">
         {Icon && (
-          <span className="mt-0.5 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/70 shadow-sm" style={{ background: tint?.bg ?? "#EDE9FE", color: tint?.fg ?? "#6D28D9" }}>
+          <span className="mt-0.5 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-line/70 shadow-sm" style={{ background: tint?.bg ?? "var(--tone-accent-bg)", color: tint?.fg ?? "var(--tone-accent-fg)" }}>
             <Icon className="size-5" strokeWidth={1.75} />
           </span>
         )}
@@ -227,7 +228,7 @@ export function Segmented<T extends string>({ value, onChange, options, label, i
           onClick={() => onChange(o.value)}
           className={cn("focus-ring relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors", value === o.value ? "text-ink" : "text-secondary hover:text-ink")}
         >
-          {value === o.value && <motion.span layoutId={`${id}-pill`} className="absolute inset-0 rounded-md bg-white shadow-xs" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+          {value === o.value && <motion.span layoutId={`${id}-pill`} className="absolute inset-0 rounded-md bg-surface shadow-xs" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
           <span className="relative inline-flex items-center gap-1.5">
             {o.icon && <o.icon className="size-4" strokeWidth={1.75} />}
             {o.label}
@@ -289,7 +290,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,9,11,0.32)] backdrop-blur-[2px] sm:items-center sm:p-6"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--scrim)] backdrop-blur-[2px] sm:items-center sm:p-6"
             onMouseDown={(e) => e.target === e.currentTarget && onClose()}
           >
             <motion.div

@@ -3,33 +3,23 @@
 import { useEffect, useId, useState } from "react";
 import { Code2, Maximize2, Minus, Plus } from "lucide-react";
 import { IconButton, cn } from "./ui";
+import { useResolvedTheme } from "./ThemeToggle";
 
 let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
-function loadMermaid() {
-  if (!mermaidPromise) {
-    mermaidPromise = import("mermaid").then((m) => {
-      m.default.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        theme: "base",
-        fontFamily: "Inter Variable, Inter, system-ui, sans-serif",
-        themeVariables: {
-          primaryColor: "#F5F3FF",
-          primaryBorderColor: "#8B5CF6",
-          primaryTextColor: "#18181B",
-          lineColor: "#71717A",
-          secondaryColor: "#EFF6FF",
-          tertiaryColor: "#FAFAFA",
-          actorBkg: "#F5F3FF",
-          actorBorder: "#8B5CF6",
-          noteBkgColor: "#FFFBEB",
-          fontSize: "14px",
-        },
-      });
-      return m.default;
-    });
-  }
-  return mermaidPromise;
+const loadMermaid = () => (mermaidPromise ??= import("mermaid").then((m) => m.default));
+
+/** Mermaid colours per theme (kept in step with the tokens in globals.css). */
+const MERMAID_THEME = {
+  light: { primaryColor: "#F0FDFA", primaryBorderColor: "#0D9488", primaryTextColor: "#0F172A", lineColor: "#64748B", secondaryColor: "#ECFEFF", tertiaryColor: "#F8FAFC", actorBkg: "#F0FDFA", actorBorder: "#0D9488", noteBkgColor: "#FFFBEB", noteTextColor: "#0F172A", background: "#FFFFFF", mainBkg: "#F0FDFA", textColor: "#0F172A", edgeLabelBackground: "#FFFFFF", clusterBkg: "#F8FAFC", clusterBorder: "#CBD5E1" },
+  dark: { primaryColor: "#0B2626", primaryBorderColor: "#2DD4BF", primaryTextColor: "#E7EEF7", lineColor: "#8A9AB2", secondaryColor: "#0E3440", tertiaryColor: "#172133", actorBkg: "#0B2626", actorBorder: "#2DD4BF", noteBkgColor: "#36270A", noteTextColor: "#FEF3C7", background: "#0F1724", mainBkg: "#0B2626", textColor: "#E7EEF7", edgeLabelBackground: "#0F1724", clusterBkg: "#172133", clusterBorder: "#31415C" },
+} as const;
+
+async function renderMermaid(id: string, code: string, theme: "light" | "dark") {
+  const mermaid = await loadMermaid();
+  // Re-initialise before each render so diagrams follow the current theme.
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", darkMode: theme === "dark", fontFamily: "Inter Variable, Inter, system-ui, sans-serif", themeVariables: { ...MERMAID_THEME[theme], fontSize: "14px" } });
+  await mermaid.parse(code);
+  return (await mermaid.render(id, code)).svg;
 }
 
 /** Renders Mermaid code client-side, with zoom/fit controls, a "view source" toggle and an error state. */
@@ -40,14 +30,13 @@ export function MermaidView({ code, compact = false }: { code: string; compact?:
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [showSource, setShowSource] = useState(false);
+  const theme = useResolvedTheme();
 
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const mermaid = await loadMermaid();
-        await mermaid.parse(code);
-        const { svg } = await mermaid.render(`${id}-${Date.now()}`, code);
+        const svg = await renderMermaid(`${id}-${Date.now()}`, code, theme);
         if (!cancelled) {
           setSvg(svg);
           setError(null);
@@ -63,7 +52,7 @@ export function MermaidView({ code, compact = false }: { code: string; compact?:
       cancelled = true;
       clearTimeout(t);
     };
-  }, [code, id]);
+  }, [code, id, theme]);
 
   return (
     <figure className={cn("not-prose my-5 overflow-hidden rounded-lg border border-line bg-surface shadow-sm", compact && "my-0")}>

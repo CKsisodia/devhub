@@ -214,7 +214,7 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
           e.preventDefault();
           run();
         }}
-        style={{ "--ai-fill": "rgba(255,255,255,0.92)" } as React.CSSProperties}
+        style={{ "--ai-fill": "var(--color-surface)" } as React.CSSProperties}
         className={cn("ai-border-animated relative flex items-end gap-2 rounded-2xl p-2 pl-3 shadow-sm transition-shadow focus-within:shadow-ai-glow", state === "generating" && "is-thinking")}
       >
         <motion.span
@@ -270,7 +270,7 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.05 * i } }}
                 onClick={() => (setPrompt(ex), textRef.current?.focus())}
-                className="focus-ring inline-flex items-center gap-1 rounded-full border border-line bg-white/80 px-2.5 py-1 text-xs text-secondary transition hover:-translate-y-px hover:border-accent-100 hover:bg-accent-50 hover:text-accent-600"
+                className="focus-ring inline-flex items-center gap-1 rounded-full border border-line bg-surface/80 px-2.5 py-1 text-xs text-secondary transition hover:-translate-y-px hover:border-accent-100 hover:bg-accent-50 hover:text-accent-600"
               >
                 <Wand2 className="size-3" aria-hidden /> {ex}
               </motion.button>
@@ -320,7 +320,7 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.25, ease: EASE }}
-            style={{ "--ai-fill": "#F5F3FF" } as React.CSSProperties}
+            style={{ "--ai-fill": "var(--ai-fill-soft)" } as React.CSSProperties}
             className="ai-border-animated ai-glow relative mt-3 overflow-hidden rounded-2xl"
           >
             <header className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
@@ -356,7 +356,7 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
                       }}
                       exit={{ opacity: 0, x: -12 }}
                       transition={{ duration: 0.3, ease: EASE }}
-                      className="rounded-xl border border-white/80 bg-white/90 p-3 shadow-xs"
+                      className="rounded-xl border border-line/80 bg-surface/90 p-3 shadow-xs"
                     >
                       <div className="flex items-center gap-2">
                         <input
@@ -364,7 +364,7 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
                           aria-label="Include draft"
                           checked={d.selected}
                           onChange={(e) => patchDraft(d.key, { selected: e.target.checked })}
-                          className="size-4 shrink-0 accent-violet-600"
+                          className="size-4 shrink-0 accent-accent-500"
                         />
                         <DraftTitle value={d.title} onChange={(v) => patchDraft(d.key, { title: v })} fresh={!reduce} />
                         <IconButton icon={Trash2} label="Remove draft" onClick={() => (setDrafts((ds) => ds.filter((x) => x.key !== d.key)), setRevealed((r) => Math.max(0, r - 1)))} />
@@ -474,14 +474,14 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
                         filter: "blur(0px)",
                       }}
                       transition={{ duration: 0.3, ease: EASE }}
-                      className="flex items-start gap-3 rounded-xl border border-white/80 bg-white/90 p-3 shadow-xs"
+                      className="flex items-start gap-3 rounded-xl border border-line/80 bg-surface/90 p-3 shadow-xs"
                     >
                       <input
                         type="checkbox"
                         aria-label="Include update"
                         checked={u.selected}
                         onChange={(e) => setUpdates((us) => us.map((x) => (x.itemId === u.itemId ? { ...x, selected: e.target.checked } : x)))}
-                        className="mt-1 size-4 accent-violet-600"
+                        className="mt-1 size-4 accent-accent-500"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium">{u.itemTitle}</div>

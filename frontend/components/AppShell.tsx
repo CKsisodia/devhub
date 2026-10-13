@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { LogOut, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Search, Users, X } from "lucide-react";
+import { LogOut, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Users, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { ADMIN_NAV, NAV, type NavItem } from "@/lib/nav";
 import { Logo } from "./Logo";
 import { CommandPalette } from "./CommandPalette";
+import { ThemeToggle } from "./ThemeToggle";
 import { EASE } from "./motion";
 import { Avatar, Menu, cn } from "./ui";
 
@@ -39,7 +40,7 @@ function NavLinks({ items, active, collapsed, layoutId, onNavigate }: { items: N
             className={cn(
               "focus-ring group relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm font-medium transition-colors",
               collapsed && "justify-center",
-              on ? "text-ink" : "text-secondary hover:bg-white/60 hover:text-ink",
+              on ? "text-ink" : "text-secondary hover:bg-surface/60 hover:text-ink",
             )}
           >
             {on && (
@@ -97,7 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         initial={false}
         animate={{ width }}
         transition={{ duration: 0.25, ease: EASE }}
-        className="fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-white/60 bg-white/55 px-3 py-4 shadow-[1px_0_0_rgba(15,23,42,0.04)] backdrop-blur-xl md:flex"
+        className="fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-line/60 bg-surface/55 px-3 py-4 shadow-[1px_0_0_rgba(15,23,42,0.04)] backdrop-blur-xl md:flex"
       >
         <div className={cn("mb-6 flex h-8 items-center", collapsed ? "justify-center" : "justify-between pl-1.5")}>
           <Link href="/dashboard" className="focus-ring rounded-md" aria-label="DevHub home">
@@ -119,7 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={toggle}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-expanded={!collapsed}
-            className={cn("focus-ring mt-2 flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm text-muted transition hover:bg-white/60 hover:text-ink", collapsed && "justify-center")}
+            className={cn("focus-ring mt-2 flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm text-muted transition hover:bg-surface/60 hover:text-ink", collapsed && "justify-center")}
           >
             {collapsed ? <PanelLeftOpen className="size-[18px]" strokeWidth={1.6} /> : <PanelLeftClose className="size-[18px]" strokeWidth={1.6} />}
             {!collapsed && <span>Collapse</span>}
@@ -128,12 +129,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       </motion.aside>
 
       <div className="transition-[padding] duration-250 ease-out md:pl-(--sb) motion-reduce:transition-none">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-white/60 bg-white/60 px-4 backdrop-blur-xl md:px-6">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line/60 bg-surface/60 px-4 backdrop-blur-xl md:px-6">
           <button
             type="button"
             aria-label="Open menu"
             onClick={() => setDrawer(true)}
-            className="focus-ring -ml-1 inline-flex size-9 items-center justify-center rounded-lg text-secondary hover:bg-white/70 md:hidden"
+            className="focus-ring -ml-1 inline-flex size-9 items-center justify-center rounded-lg text-secondary hover:bg-surface/70 md:hidden"
           >
             <MenuIcon className="size-5" />
           </button>
@@ -152,19 +153,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               {current?.label}
             </motion.div>
           </AnimatePresence>
-          <div className="flex flex-1 justify-center">
-            <button
-              type="button"
-              onClick={() => setPalette(true)}
-              aria-label="Open command palette"
-              className="focus-ring group flex h-9 w-full max-w-[420px] items-center gap-2 rounded-xl border border-line bg-white/70 px-3 text-sm text-muted shadow-xs transition hover:border-accent-100 hover:bg-white hover:shadow-ai-glow"
-            >
-              <Search className="size-4 shrink-0 transition group-hover:text-accent-500" />
-              <span className="hidden flex-1 truncate text-left sm:inline">Jump to a page or project…</span>
-              <kbd className="ml-auto hidden rounded border border-line bg-white px-1.5 py-0.5 font-mono text-[11px] sm:inline">⌘K</kbd>
-            </button>
-          </div>
+          <div className="flex-1" />
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             {isAdmin ? (
               <span className="ai-border hidden h-6 items-center rounded-full px-2.5 text-xs font-medium sm:inline-flex">
                 <span className="text-ai">Admin</span>
@@ -206,7 +197,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ duration: 0.25, ease: EASE }}
-              className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col gap-1 bg-white/90 px-3 py-4 shadow-xl backdrop-blur-xl"
+              className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col gap-1 bg-surface/90 px-3 py-4 shadow-xl backdrop-blur-xl"
             >
               <div className="mb-4 flex items-center justify-between pl-1.5">
                 <Logo />

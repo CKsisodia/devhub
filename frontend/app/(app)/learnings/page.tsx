@@ -12,7 +12,7 @@ import { Button, Card, Chip, ConfirmModal, EmptyState, IconButton, Input, Menu, 
 import { LearningForm } from "@/components/LearningForm";
 import { useToast } from "@/components/toast";
 
-const TYPE_COLOR: Record<LearningType, string> = { ARTICLE: "text-blue-700", NEWS: "text-amber-700", BLOG: "text-violet-700" };
+const TYPE_COLOR: Record<LearningType, string> = { ARTICLE: "text-blue-700", NEWS: "text-amber-700", BLOG: "text-accent-600" };
 
 export default function LearningPage() {
   const isAdmin = useIsAdmin();

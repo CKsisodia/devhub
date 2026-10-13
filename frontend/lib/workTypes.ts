@@ -37,7 +37,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     emptyText: "Add a task by hand or ask the AI to draft some.",
     aiPlaceholder: "Ask AI to add or update tasks… e.g. “Add 3 tasks for Login Redesign”",
     examples: ["Add 3 tasks for the login page redesign", "Mark all Checkout Performance tasks as done", "Add a task about upgrading Storybook, on hold"],
-    tint: { bg: "#EDE9FE", fg: "#6D28D9" },
+    tint: { bg: "var(--tone-accent-bg)", fg: "var(--tone-accent-fg)" },
   },
   ROADMAP: {
     type: "ROADMAP",
@@ -51,7 +51,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     emptyText: "Add an initiative with a target month or quarter.",
     aiPlaceholder: "Ask AI to plan roadmap items… e.g. “Add 2 roadmap items for Design System v2 in Q1”",
     examples: ["Add 2 roadmap items for Design System v2 in Q1 2027", "Add a roadmap item about dark mode for Q2 2027", "Move all Checkout Performance items to hold"],
-    tint: { bg: "#DBEAFE", fg: "#1D4ED8" },
+    tint: { bg: "var(--tone-cyan-bg)", fg: "var(--tone-cyan-fg)" },
   },
   RND: {
     type: "RND",
@@ -65,7 +65,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     emptyText: "Add a question to research, with a goal and a time box.",
     aiPlaceholder: "Ask AI to draft research items… e.g. “Add 2 R&D items about signals, 3 weeks”",
     examples: ["Add 2 R&D items about state management, 3 weeks", "Add an R&D item about CSS anchor positioning", "Mark all Checkout Performance items as done"],
-    tint: { bg: "#E0F2FE", fg: "#0369A1" },
+    tint: { bg: "var(--tone-warning-bg)", fg: "var(--tone-warning-fg)" },
   },
   POC: {
     type: "POC",
@@ -79,7 +79,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     emptyText: "Add a proof of concept with a goal and a time box.",
     aiPlaceholder: "Ask AI to draft POCs… e.g. “Add 1 POC for view transitions, 2 weeks”",
     examples: ["Add 1 POC for view transitions, 2 weeks", "Add 2 POCs about passkeys for Login Redesign", "Move all Design System v2 items to done"],
-    tint: { bg: "#FCE7F3", fg: "#BE185D" },
+    tint: { bg: "var(--tone-rose-bg)", fg: "var(--tone-rose-fg)" },
   },
 };
 

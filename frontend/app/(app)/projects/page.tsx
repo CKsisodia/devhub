@@ -26,7 +26,7 @@ export default function ProjectsPage() {
         actions={
           <>
             <label className="mr-2 flex items-center gap-2 text-sm text-muted">
-              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="size-4 accent-violet-600" /> Show archived
+              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="size-4 accent-accent-500" /> Show archived
             </label>
             {isAdmin && (
               <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
@@ -54,7 +54,7 @@ export default function ProjectsPage() {
                 <div className="flex items-start justify-between gap-2">
                   <h2 className="text-base font-semibold">{p.name}</h2>
                   <div className="flex gap-1">
-                    {p.archived && <Pill bg="#F4F4F5" text="#71717A">Archived</Pill>}
+                    {p.archived && <Pill bg="var(--tone-neutral-bg)" text="var(--tone-neutral-fg)">Archived</Pill>}
                     <ProjectStatusPill status={p.status} />
                   </div>
                 </div>

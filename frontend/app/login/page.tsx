@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState, type ClipboardEvent
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, Copy, Eye, EyeOff, KeyRound, ShieldCheck, Smartphone } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button, cn } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import type { LoginState, LoginStep, TotpSetup } from "@/lib/types";
@@ -67,10 +68,11 @@ function Login() {
 
   return (
     <main className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10">
+      <ThemeToggle id="login-theme" className="absolute right-4 top-4 z-10" />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
-        style={{ background: "radial-gradient(40rem 30rem at 15% 20%, rgba(124,58,237,0.16), transparent 60%), radial-gradient(36rem 28rem at 85% 80%, rgba(37,99,235,0.14), transparent 60%), radial-gradient(30rem 24rem at 60% 10%, rgba(79,70,229,0.10), transparent 60%)" }}
+        style={{ background: "radial-gradient(40rem 30rem at 15% 20%, var(--aurora-a), transparent 60%), radial-gradient(36rem 28rem at 85% 80%, var(--aurora-b), transparent 60%), radial-gradient(30rem 24rem at 60% 10%, var(--aurora-c), transparent 60%)" }}
       />
       <div className={cn("glass relative w-full rounded-xl p-8 shadow-lg", step === "totp_setup" ? "max-w-[480px]" : "max-w-[420px]", shake && "animate-shake")}>
         <Logo />
@@ -298,7 +300,7 @@ function TotpSetupStep({ account, error, onDone, onError, onBack }: StepProps & 
           <div className="min-w-0 flex-1 text-sm">
             <p className="font-medium text-ink">Scan this QR code with the app</p>
             <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:items-start">
-              <div className="flex size-[168px] shrink-0 items-center justify-center rounded-lg border border-line bg-white p-2 shadow-xs">
+              <div className="flex size-[168px] shrink-0 items-center justify-center rounded-lg border border-line bg-surface p-2 shadow-xs">
                 {setup ? <img src={setup.qrDataUrl} alt={`QR code to add ${setup.issuer} (${setup.account}) to your authenticator app`} width={152} height={152} /> : <div className="skeleton size-[152px]" />}
               </div>
               <div className="min-w-0 text-[13px] text-muted">

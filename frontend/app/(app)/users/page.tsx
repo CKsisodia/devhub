@@ -4,7 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { KeyRound, MoreHorizontal, Plus, ShieldAlert, ShieldOff, UserCheck, UserX } from "lucide-react";
 import { api, fetcher } from "@/lib/api";
-import { formatDate, timeAgo } from "@/lib/format";
+import { formatDate, timeAgo, tone } from "@/lib/format";
 import { useIsAdmin } from "@/lib/hooks";
 import type { AdminUser } from "@/lib/types";
 import { Avatar, Button, Card, ConfirmModal, EmptyState, Field, IconButton, Input, Menu, Modal, PageHeader, Pill, Skeleton, cn } from "@/components/ui";
@@ -222,14 +222,14 @@ export default function UsersPage() {
                           <span className="text-ai">Admin</span>
                         </span>
                       ) : (
-                        <Pill bg="#F4F4F5" text="#52525B">Viewer</Pill>
+                        <Pill bg={tone("neutral").bg} text={tone("neutral").text}>Viewer</Pill>
                       )}
                     </td>
                     <td>
-                      {u.totpEnabled ? <Pill bg="#DCFCE7" text="#166534" dot="#22C55E">On</Pill> : <Pill bg="#FEF3C7" text="#92400E" dot="#F59E0B">Set up at next sign-in</Pill>}
+                      {u.totpEnabled ? <Pill {...tone("success")}>On</Pill> : <Pill {...tone("warning")}>Set up at next sign-in</Pill>}
                       {u.mustChangePassword && <span className="ml-1.5 text-xs text-muted">· temp password</span>}
                     </td>
-                    <td>{u.active ? <Pill bg="#DCFCE7" text="#166534" dot="#22C55E">Active</Pill> : <Pill bg="#F4F4F5" text="#71717A" dot="#A1A1AA">Inactive</Pill>}</td>
+                    <td>{u.active ? <Pill {...tone("success")}>Active</Pill> : <Pill {...tone("neutral")}>Inactive</Pill>}</td>
                     <td className="text-[13px] text-muted" title={`Added ${formatDate(u.createdAt.slice(0, 10), true)}`}>
                       {u.lastLoginAt ? timeAgo(u.lastLoginAt) : "Never"}
                     </td>

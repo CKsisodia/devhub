@@ -1,24 +1,28 @@
 import type { LearningType, PocOutcome, ProjectStatus, WorkStatus } from "./types";
 
+export type Tone = "neutral" | "info" | "warning" | "success" | "danger" | "accent" | "cyan" | "rose" | "orange" | "lime";
+/** Theme-aware pill colours: CSS variables defined per theme in globals.css (bg, AA text, dot). */
+export const tone = (n: Tone) => ({ bg: `var(--tone-${n}-bg)`, text: `var(--tone-${n}-fg)`, dot: `var(--tone-${n}-dot)` });
+
 export const STATUSES: WorkStatus[] = ["TODO", "IN_PROGRESS", "DONE", "HOLD", "REJECT"];
 export const PROJECT_STATUSES: ProjectStatus[] = ["ACTIVE", "ON_HOLD", "COMPLETED"];
 export const LEARNING_TYPES: LearningType[] = ["BLOG", "ARTICLE", "NEWS"];
 
 export const STATUS_LABEL: Record<WorkStatus, string> = { TODO: "To do", IN_PROGRESS: "In progress", DONE: "Done", HOLD: "Hold", REJECT: "Reject" };
-/** Pill = tinted background + dark text + dot (design brief 2.4); every text/background pair passes WCAG AA. */
+/** Pill = tinted background + dark text + dot (design brief 2.4); every text/background pair passes WCAG AA in both themes. */
 export const STATUS_STYLE: Record<WorkStatus, { bg: string; text: string; dot: string }> = {
-  TODO: { bg: "#DBEAFE", text: "#1E40AF", dot: "#3B82F6" },
-  IN_PROGRESS: { bg: "#FEF3C7", text: "#92400E", dot: "#F59E0B" },
-  DONE: { bg: "#DCFCE7", text: "#166534", dot: "#22C55E" },
-  HOLD: { bg: "#F1F5F9", text: "#334155", dot: "#94A3B8" },
-  REJECT: { bg: "#FEE2E2", text: "#991B1B", dot: "#EF4444" },
+  TODO: tone("info"),
+  IN_PROGRESS: tone("warning"),
+  DONE: tone("success"),
+  HOLD: tone("neutral"),
+  REJECT: tone("danger"),
 };
 export const OUTCOMES: PocOutcome[] = ["ADOPT", "DROP", "NEEDS_MORE_WORK"];
 export const OUTCOME_LABEL: Record<PocOutcome, string> = { ADOPT: "Adopt", DROP: "Drop", NEEDS_MORE_WORK: "Needs more work" };
 export const OUTCOME_STYLE: Record<PocOutcome, { bg: string; text: string; dot: string }> = {
-  ADOPT: { bg: "#DCFCE7", text: "#166534", dot: "#16A34A" },
-  DROP: { bg: "#FEE2E2", text: "#991B1B", dot: "#DC2626" },
-  NEEDS_MORE_WORK: { bg: "#FEF3C7", text: "#92400E", dot: "#D97706" },
+  ADOPT: tone("success"),
+  DROP: tone("danger"),
+  NEEDS_MORE_WORK: tone("warning"),
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -43,9 +47,9 @@ export function daysUntil(ymd: string) {
 }
 export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = { ACTIVE: "Active", ON_HOLD: "On hold", COMPLETED: "Completed" };
 export const PROJECT_STATUS_STYLE: Record<ProjectStatus, { bg: string; text: string; dot: string }> = {
-  ACTIVE: { bg: "#F4F4F5", text: "#3F3F46", dot: "#71717A" },
-  ON_HOLD: { bg: "#EFF6FF", text: "#1E40AF", dot: "#2563EB" },
-  COMPLETED: { bg: "#F0FDF4", text: "#166534", dot: "#16A34A" },
+  ACTIVE: tone("accent"),
+  ON_HOLD: tone("info"),
+  COMPLETED: tone("success"),
 };
 export const LEARNING_LABEL: Record<LearningType, string> = { BLOG: "Blog", ARTICLE: "Article", NEWS: "News" };
 

@@ -30,11 +30,11 @@ function ZoomImage({ src, alt }: { src: string; alt: string }) {
       </button>
       {alt && <span className="-mt-2 mb-4 block text-[13px] text-muted">{alt}</span>}
       {open && (
-        <div role="dialog" aria-modal="true" aria-label={alt} className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(9,9,11,0.7)] p-6" onClick={() => setOpen(false)}>
-          <button type="button" aria-label="Close" className="absolute right-4 top-4 rounded-full bg-white/90 p-2" onClick={() => setOpen(false)}>
+        <div role="dialog" aria-modal="true" aria-label={alt} className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(2,6,23,0.75)] p-6" onClick={() => setOpen(false)}>
+          <button type="button" aria-label="Close" className="absolute right-4 top-4 rounded-full bg-surface/90 p-2 text-ink" onClick={() => setOpen(false)}>
             <X className="size-4" />
           </button>
-          <img src={src} alt={alt} className="max-h-full max-w-full rounded-lg bg-white shadow-lg" />
+          <img src={src} alt={alt} className="max-h-full max-w-full rounded-lg bg-surface shadow-lg" />
         </div>
       )}
     </>

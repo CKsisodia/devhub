@@ -38,7 +38,7 @@ export function WorkCard({ item, isAdmin, highlight, showProject, onStatus, onEd
       layout="position"
       variants={itemVariants}
       exit="exit"
-      className={cn("glass-card lift relative rounded-xl p-4 focus-within:z-20 has-[[aria-expanded=true]]:z-30", highlight && "ai-border-animated ai-glow", closed && "bg-white/60")}
+      className={cn("glass-card lift relative rounded-xl p-4 focus-within:z-20 has-[[aria-expanded=true]]:z-30", highlight && "ai-border-animated ai-glow", closed && "bg-surface/60")}
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
@@ -195,10 +195,10 @@ export function WorkItemsView({ type, projectId, withAi = false, headerSlot }: {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted" />
-          <Input aria-label={`Search ${cfg.label}`} placeholder="Search title or notes" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} className="bg-white/80 pl-8" />
+          <Input aria-label={`Search ${cfg.label}`} placeholder="Search title or notes" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} className="bg-surface/80 pl-8" />
         </div>
         {!projectId && (
-          <Select aria-label="Filter by project" value={filters.projectId} onChange={(e) => setFilters({ ...filters, projectId: e.target.value })} className="w-auto min-w-36 bg-white/80">
+          <Select aria-label="Filter by project" value={filters.projectId} onChange={(e) => setFilters({ ...filters, projectId: e.target.value })} className="w-auto min-w-36 bg-surface/80">
             <option value="">All projects</option>
             <option value="none">No project</option>
             {projects?.map((p) => (

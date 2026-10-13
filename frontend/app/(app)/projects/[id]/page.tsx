@@ -77,7 +77,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <span className="flex flex-wrap items-center gap-3">
             {project.name} <ProjectStatusPill status={project.status} />
             {project.archived && (
-              <Pill bg="#F4F4F5" text="#71717A">
+              <Pill bg="var(--tone-neutral-bg)" text="var(--tone-neutral-fg)">
                 Archived
               </Pill>
             )}

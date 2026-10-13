@@ -124,7 +124,7 @@ export function WorkRows({ items, showProject = true }: { items: WorkItem[]; sho
   return (
     <motion.ul variants={listVariants} initial="hidden" animate="show" className="pb-2">
       {items.map((i) => (
-        <motion.li key={i.id} variants={itemVariants} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm transition-colors hover:bg-white/50 sm:flex-nowrap")}>
+        <motion.li key={i.id} variants={itemVariants} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm transition-colors hover:bg-surface/50 sm:flex-nowrap")}>
           <TypeBadge type={i.type} />
           <span className="min-w-0 flex-1">
             <Link href={`/${WORK[i.type].path}`} className="block truncate font-medium hover:text-accent-600">
