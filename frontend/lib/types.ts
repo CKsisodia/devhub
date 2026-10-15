@@ -175,6 +175,10 @@ export interface DraftResult {
   warnings: string[];
   message?: string;
   source: "llm" | "mock";
+  /** Model that produced the draft (LLM mode only). */
+  model?: string;
+  /** Server-side drafting time in ms. */
+  ms?: number;
 }
 
 // Sign-in

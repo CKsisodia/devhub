@@ -10,6 +10,10 @@ const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:4000").replace
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    // AI drafts on a CPU-only local model (Ollama) can take 60–150 s; the rewrite proxy defaults to 30 s.
+    proxyTimeout: 180_000,
+  },
   async redirects() {
     return [
       { source: "/backlog", destination: "/tasks", permanent: false },

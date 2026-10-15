@@ -132,10 +132,12 @@ All configuration is via environment variables, documented in `backend/.env.exam
 - **Sessions & limits:** `SESSION_TTL_HOURS` (default 168), `PENDING_LOGIN_TTL_MINUTES` (10),
   `COOKIE_SECURE` (defaults to on in production), `LOGIN_MAX_ATTEMPTS` (8 per email per window, ×4 per IP),
   `RATE_LIMIT_WINDOW_MINUTES` (15).
-- **AI prompt entry:** `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` for any OpenAI-compatible chat completions
-  API (JSON mode). Without a key, dev uses a deterministic keyword-based mock labelled **"Mock AI (dev)"** in
-  the UI (`LLM_MOCK=true`). In production, or with `LLM_MOCK=false`, the UI shows "AI drafting isn't
-  configured" and manual entry still works.
+- **AI prompt entry:** `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TIMEOUT_MS` (90000),
+  `LLM_CONTEXT_ITEMS` (60) for any OpenAI-compatible chat completions API in JSON mode. The default is a free
+  local model, **Qwen 2.5 7B Instruct through Ollama** (`http://localhost:11434/v1`, no key needed); see
+  *AI drafting with a local model* below. Only when no LLM is configured (no key and a non-local URL) does dev
+  fall back to a deterministic keyword mock labelled **"Mock AI (dev)"** (`LLM_MOCK=true`). In production
+  without an LLM, the UI shows "AI drafting isn't configured" and manual entry still works.
 - **Uploads (wireframes):** `BLOB_READ_WRITE_TOKEN` stores images in Vercel Blob. Without it, images go to
   `backend/uploads/` on local disk and are served only to signed-in users.
 
@@ -230,6 +232,36 @@ for 2 weeks"*, *"POC for a feature flag service, 3 weeks"*, or *"Mark all Checko
    then clicks **Confirm and save**. Only then does `POST /api/<s>/bulk` write anything, in a single
    transaction, with activity log entries.
 
+### AI drafting with a local model (Ollama + Qwen 2.5 7B)
+
+DevHub drafts with any OpenAI-compatible API. Locally it uses [Ollama](https://ollama.com), free and offline,
+running `qwen2.5:7b` (Apache-2.0, ~4.7 GB download, ~5–6 GB RAM while loaded).
+
+```bash
+brew install ollama            # or download from https://ollama.com/download
+brew services start ollama     # or: OLLAMA_CONTEXT_LENGTH=8192 ollama serve
+ollama pull qwen2.5:7b         # on 8 GB machines use qwen2.5:3b instead
+```
+
+`backend/.env`: `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL=qwen2.5:7b`, `LLM_API_KEY=` (empty).
+Restart the backend; its startup log prints `AI drafting: llm (qwen2.5:7b @ http://localhost:11434/v1)`.
+
+- Every request uses JSON mode (`response_format: json_object`) with a section-specific prompt (fields, rules and
+  an example reply for Tasks, Roadmap, R&D or POC). The answer is validated with zod; if it isn't valid JSON in
+  the expected shape, the model is shown its answer and asked once more, then a clear error is returned.
+- On a CPU-only laptop a draft takes roughly 15–60 s (the first one also loads the model). The request times out
+  after `LLM_TIMEOUT_MS`; the Next.js proxy allows 180 s.
+- If Ollama isn't running, the prompt box says *"The local AI server (localhost:11434) isn't reachable. Is Ollama
+  running?"*; a missing model says *"ollama pull qwen2.5:7b"*.
+
+**Production options** (switching is env-only):
+
+| Option | Settings | Notes |
+| --- | --- | --- |
+| Self-hosted Ollama on a VM | `LLM_BASE_URL=http://<vm>:11434/v1`, `LLM_MODEL=qwen2.5:7b` | Free model, you pay for the VM (≥8 GB RAM CPU-only, ~30–60 s per draft; a small GPU makes it 1–3 s). Keep port 11434 private (same VPC / firewall to the backend only); Ollama has no auth, so put a reverse proxy with a token in front if it must be public, and set `LLM_API_KEY` to that token |
+| Groq free tier | `https://api.groq.com/openai/v1`, `llama-3.1-8b-instant` or `qwen/qwen3-32b`, `LLM_API_KEY=gsk_...` | Very fast (~1 s), rate-limited free tier, no server to run |
+| OpenRouter free models | `https://openrouter.ai/api/v1`, a `:free` model, `LLM_API_KEY=sk-or-...` | Many open models; free tier has daily limits and variable latency |
+
 ## UI, theme and motion
 
 **Colours** are design tokens in `frontend/app/globals.css`: the light values in `@theme`, dark overrides in
@@ -292,13 +324,18 @@ Each project has its own doc space, plus a team-wide **General** space. Pages ne
   start with `npm start`, Node 20+.
 - **Google Cloud Run, AWS App Runner or a small VM** with the same commands (or your own Dockerfile).
 - Production env: `NODE_ENV=production`, `DATABASE_URL` (Neon or Supabase; use the direct, non-pooled URL for
-  `migrate deploy`), `WEBSITE_DOMAIN` set to the Vercel URL, **`TOTP_ENCRYPTION_KEY`** (required), `LLM_API_KEY`,
+  `migrate deploy`), `WEBSITE_DOMAIN` set to the Vercel URL, **`TOTP_ENCRYPTION_KEY`** (required), the `LLM_*` settings (see *AI drafting with a local model*),
   and `BLOB_READ_WRITE_TOKEN` (local disk on most hosts isn't persistent). HTTPS is required (Secure cookie).
 - First admin in production: run `npm run db:seed` only for a demo environment (it wipes the app tables and
   uses known dev passwords). For a real environment, insert the admin row once (argon2 hash as in *Account
   recovery*, `must_change_password=true`) and let them enrol two-factor at first sign-in.
 
 ## Troubleshooting
+
+- **AI prompt: "The local AI server isn't reachable"**: start Ollama (`brew services start ollama` or `ollama serve`)
+  and check `curl localhost:11434/api/version`. **"model … isn't available"**: `ollama pull qwen2.5:7b`.
+  **Timeouts**: the first draft loads the model; close memory-heavy apps, raise `LLM_TIMEOUT_MS`, or use
+  `LLM_MODEL=qwen2.5:3b`.
 
 - **`docker compose up` fails with "Cannot connect to the Docker daemon"**: start Docker Desktop first.
 - **Port already in use (5432, 4000 or 3000)**: for Postgres, create a root `.env` with `POSTGRES_PORT=5433`

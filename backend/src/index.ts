@@ -12,6 +12,6 @@ app.listen(config.port, () => {
   console.log(`  Auth:             email + password, then TOTP (authenticator app)`);
   console.log(`  TOTP secret key:  ${usingDevKey() ? "built-in DEV key (set TOTP_ENCRYPTION_KEY before deploying)" : "TOTP_ENCRYPTION_KEY"}`);
   console.log(`  Session cookie:   ${config.auth.cookieSecure ? "Secure (HTTPS only)" : "not Secure (local HTTP)"}, ${config.auth.sessionTtlHours} h`);
-  console.log(`  AI drafting:      ${llmMode()}${llmMode() === "mock" ? " (deterministic dev mock, no LLM key)" : ""}`);
+  console.log(`  AI drafting:      ${llmMode()}${llmMode() === "mock" ? " (deterministic dev mock, no LLM configured)" : llmMode() === "llm" ? ` (${config.llm.model} @ ${config.llm.baseUrl})` : ""}`);
   console.log(`  Uploads:          ${config.uploads.blobToken ? "Vercel Blob" : `local disk (${config.uploads.localDir}/)`}`);
 });

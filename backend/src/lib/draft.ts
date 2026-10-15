@@ -219,7 +219,7 @@ export function matchByName<T extends { id: string; name: string }>(items: T[], 
   return null;
 }
 
-const NO_PROJECT = new Set(["", "none", "null", "no project", "general", "n a"]);
+const NO_PROJECT = new Set(["", "none", "null", "no project", "general", "n a", "na", "unknown", "unspecified", "not specified", "tbd", "undefined", "nil"]);
 
 /** undefined = not mentioned; {id:null,name:null} = explicitly no project; unmatched names are flagged. */
 function resolveProject(ctx: DraftContext, raw: string | null | undefined, flags: DraftFlags) {
@@ -354,48 +354,117 @@ export function parseDraftResponse(input: string | unknown, ctx: DraftContext): 
 
 // ---------- Prompt ----------
 
-const SECTION_HELP: Record<WorkType, { what: string; fields: string }> = {
-  TASK: { what: "Tasks: a simple list of notes-like work items.", fields: "" },
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
+const SECTION_HELP: Record<WorkType, { what: string; fields: string; rules: string[]; example: string }> = {
+  TASK: {
+    what: "Tasks: a simple list of notes-like work items.",
+    fields: "",
+    rules: ["Split a request that lists several things into one create per thing."],
+    example:
+      '{"creates":[{"title":"Add loading states to the dashboard","notes":"Skeletons for cards and tables","project":"Dashboard","status":"TODO"}],"updates":[],"message":"Drafted 1 task."}',
+  },
   ROADMAP: {
     what: "Roadmap: planned frontend initiatives, each with a target period.",
-    fields: ',"targetPeriod":"YYYY-MM" (month) or "YYYY-Qn" (quarter) or null',
+    fields: ',"targetPeriod":"YYYY-MM"|"YYYY-Qn"|null',
+    rules: [
+      'targetPeriod is a month "YYYY-MM" or a quarter "YYYY-Qn" (e.g. "2026-Q4"). Turn "next quarter", "in March", "Q1" into that form using today\'s date; null if no timing is given.',
+    ],
+    example:
+      '{"creates":[{"title":"Migrate to the new design system","notes":"","project":null,"status":"TODO","targetPeriod":"2026-Q4"}],"updates":[],"message":"Drafted 1 roadmap item."}',
   },
   RND: {
     what: "R&D: time-boxed research items.",
-    fields: ',"goal":string,"timeboxEnd":"YYYY-MM-DD" or null,"findings":string',
+    fields: ',"goal":string,"timeboxEnd":"YYYY-MM-DD"|null,"findings":string',
+    rules: [
+      "goal is the question the research answers (one sentence). timeboxEnd is the deadline as YYYY-MM-DD; turn \"two weeks\" or \"by Friday\" into a date from today; null if none.",
+      "findings stays an empty string unless the request states results.",
+    ],
+    example:
+      '{"creates":[{"title":"Research state management options","notes":"","project":null,"status":"TODO","goal":"Pick between Zustand and Redux Toolkit","timeboxEnd":"2026-10-27","findings":""}],"updates":[],"message":"Drafted 1 R&D item."}',
   },
   POC: {
     what: "POC: time-boxed proofs of concept.",
-    fields: ',"goal":string,"timeboxEnd":"YYYY-MM-DD" or null,"findings":string,"outcome":"ADOPT"|"DROP"|"NEEDS_MORE_WORK"|null',
+    fields: ',"goal":string,"timeboxEnd":"YYYY-MM-DD"|null,"findings":string,"outcome":"ADOPT"|"DROP"|"NEEDS_MORE_WORK"|null',
+    rules: [
+      "goal is what the prototype must prove. timeboxEnd is YYYY-MM-DD (convert relative dates from today) or null.",
+      'outcome is null until the request says the POC is decided: "adopt"/"go" -> ADOPT, "drop"/"no-go" -> DROP, "needs more work" -> NEEDS_MORE_WORK. findings empty unless results are stated.',
+    ],
+    example:
+      '{"creates":[{"title":"Prototype server components for the dashboard","notes":"","project":"Dashboard","status":"IN_PROGRESS","goal":"Check load time improves by 30%","timeboxEnd":"2026-11-01","findings":"","outcome":null}],"updates":[],"message":"Drafted 1 POC."}',
   },
 };
 
-export function buildMessages(prompt: string, ctx: DraftContext) {
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const plusDays = (ymd: string, days: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+/** Precomputed date anchors so small models don't have to do calendar arithmetic. */
+export function dateHints(today: string, type: WorkType): string {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const q = Math.floor((m - 1) / 3) + 1;
+  const nq = q === 4 ? `${y + 1}-Q1` : `${y}-Q${q + 1}`;
+  const nm = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 = Sunday
+  const friday = plusDays(today, ((5 - dow + 7) % 7) || 7);
+  if (type === "ROADMAP") {
+    return [
+      `Date anchors: this month = ${today.slice(0, 7)}, next month = ${nm}, this quarter = ${y}-Q${q}, next quarter = ${nq}, next year = ${y + 1}.`,
+      `A named month becomes "YYYY-MM" (e.g. "March ${y + 1}" = "${y + 1}-03"; a month name without a year means its next occurrence). Use "YYYY-Qn" only when the request says a quarter.`,
+    ].join("\n");
+  }
+  if (type === "RND" || type === "POC") {
+    return `Date anchors for timeboxEnd: 1 week = ${plusDays(today, 7)}, 2 weeks = ${plusDays(today, 14)}, 3 weeks = ${plusDays(today, 21)}, 4 weeks = ${plusDays(today, 28)}, 1 month = ${plusDays(today, 30)}, 6 weeks = ${plusDays(today, 42)}, 2 months = ${plusDays(today, 61)}, this/next Friday = ${friday}. Use these exact dates; never use today's date for a timebox.`;
+  }
+  return "";
+}
+
+export function buildMessages(prompt: string, ctx: DraftContext, maxItems = 60): ChatMessage[] {
   const type = ctx.type ?? "TASK";
   const help = SECTION_HELP[type];
   const projectName = (id: string | null) => ctx.projects.find((p) => p.id === id)?.name ?? null;
   const statuses = WORK_STATUSES.map((s) => `"${s}"`).join("|");
   const system = [
     `You turn a frontend team admin's request into changes to the "${WORK_TYPE_META[type].label}" section. ${help.what}`,
-    "Reply with ONE JSON object only, no prose:",
+    "Reply with ONE JSON object only (no prose, no markdown), exactly this shape:",
     `{"creates":[{"title":string,"notes":string,"project":string|null,"status":${statuses}${help.fields}}],`,
-    ` "updates":[{"itemId":string,"changes":{ any of the create fields }}],`,
+    ` "updates":[{"itemId":string,"changes":{ only the fields that change, same names as in creates }}],`,
     ' "message":string}',
-    "Rules: use project names exactly as listed; project is optional (null when the request doesn't name one). Only reference itemIds from the item list.",
-    "Use creates for new items and updates for changes to existing items. Default status TODO. Keep titles short (under 80 chars); put details in notes.",
-    "Never invent projects; if a name doesn't match, still write the name you were given so the admin can fix it. Leave fields you weren't told about empty.",
-    `Today is ${ctx.today}.`,
+    "Rules:",
+    "- creates = new items; updates = changes to items in the context list (use their exact itemId). Use [] when there are none.",
+    "- status must be one of the listed values; default TODO. \"started/working on\" = IN_PROGRESS, \"finished\" = DONE, \"paused/blocked\" = HOLD, \"cancelled/won't do\" = REJECT.",
+    "- project: copy a name from the projects list when the request names one; otherwise null (never \"Unknown\"). If it names an unknown project, still write that name.",
+    "- Keep titles short (under 80 chars) and specific; put details in notes. Don't invent details the admin didn't give; leave such fields empty or null.",
+    ...help.rules.map((r) => `- ${r}`),
+    "- message: one short sentence summarising what you drafted.",
+    `Today is ${ctx.today} (${MONTH_NAMES[Number(ctx.today.slice(5, 7)) - 1]} ${ctx.today.slice(0, 4)}).`,
+    ...(dateHints(ctx.today, type) ? [dateHints(ctx.today, type)] : []),
+    `Example reply: ${help.example}`,
   ].join("\n");
+  const extras = (i: DraftContext["items"][number]) => {
+    if (type === "ROADMAP") return { targetPeriod: i.targetPeriod ?? null };
+    if (type === "RND") return { goal: i.goal ?? "", timeboxEnd: i.timeboxEnd ?? null };
+    if (type === "POC") return { goal: i.goal ?? "", timeboxEnd: i.timeboxEnd ?? null, outcome: i.outcome ?? null };
+    return {};
+  };
   const context = {
     section: WORK_TYPE_META[type].label,
     projects: ctx.projects.map((p) => p.name),
     statuses: WORK_STATUSES,
-    items: ctx.items.map((i) => ({ itemId: i.id, title: i.title, project: projectName(i.projectId), status: i.status })),
+    items: ctx.items.slice(0, maxItems).map((i) => ({ itemId: i.id, title: i.title, project: projectName(i.projectId), status: i.status, ...extras(i) })),
   };
   return [
-    { role: "system" as const, content: system },
-    { role: "user" as const, content: `Context:\n${JSON.stringify(context)}\n\nRequest: ${prompt}` },
+    { role: "system", content: system },
+    { role: "user", content: `Context:\n${JSON.stringify(context)}\n\nRequest: ${prompt}` },
   ];
+}
+
+/** Follow-up message for the single retry after an invalid answer. */
+export function buildRepairMessage(problem: string): ChatMessage {
+  return {
+    role: "user",
+    content: `Your previous reply could not be used: ${problem} Reply again with ONE valid JSON object only, with keys "creates", "updates" and "message", exactly as specified. No prose.`,
+  };
 }
 
 // ---------- Deterministic mock (dev only, clearly labelled in the UI) ----------

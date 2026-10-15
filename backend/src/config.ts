@@ -49,10 +49,16 @@ export const config = {
   },
 
   llm: {
+    /** Bearer token. Optional for keyless local servers (Ollama); any placeholder works there. */
     apiKey: process.env.LLM_API_KEY || undefined,
+    /** Any OpenAI-compatible chat completions base URL: Ollama (http://localhost:11434/v1), Groq, OpenRouter, OpenAI… */
     baseUrl: str("LLM_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, ""),
     model: str("LLM_MODEL", "gpt-4o-mini"),
-    /** When true and no API key is set, a deterministic mock drafts work items (dev only). */
+    /** Per-request timeout. CPU-only local models need ~30–90 s per draft. */
+    timeoutMs: Number(str("LLM_TIMEOUT_MS", "90000")),
+    /** Max existing items sent as context (keeps prompts small for local models). */
+    contextItems: Number(str("LLM_CONTEXT_ITEMS", "60")),
+    /** When true and no LLM is configured, a deterministic mock drafts work items (dev only). */
     mock: bool("LLM_MOCK", false),
   },
 

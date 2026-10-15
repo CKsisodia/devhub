@@ -16,13 +16,13 @@ import { useToast } from "./toast";
 type EditableDraft = DraftItem & { key: number; selected: boolean };
 type EditableUpdate = DraftUpdate & { selected: boolean };
 
-const thinkingSteps = (label: string) => ["Reading your projects…", `Drafting ${label}…`, "Matching names and statuses…", "Tidying up the preview…"];
+const thinkingSteps = (label: string) => ["Reading your projects…", `Drafting ${label}…`, "Matching names and statuses…", "Tidying up the preview…", "Still working: local models can take up to a minute…"];
 
 function ThinkingLine({ label }: { label: string }) {
   const steps = thinkingSteps(label);
   const [i, setI] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setI((x) => (x + 1) % steps.length), 1100);
+    const id = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 2500);
     return () => clearInterval(id);
   }, [steps.length]);
   return (
@@ -70,7 +70,7 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
   const [error, setError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<EditableDraft[]>([]);
   const [updates, setUpdates] = useState<EditableUpdate[]>([]);
-  const [meta, setMeta] = useState<Pick<DraftResult, "message" | "warnings" | "source"> | null>(null);
+  const [meta, setMeta] = useState<Pick<DraftResult, "message" | "warnings" | "source" | "model" | "ms"> | null>(null);
   const [revealed, setRevealed] = useState(0);
   const [saving, setSaving] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -104,6 +104,8 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
         message: res.message,
         warnings: res.warnings,
         source: res.source,
+        model: res.model,
+        ms: res.ms,
       });
       setRevealed(0);
       if (!res.creates.length && !res.updates.length) {
@@ -328,7 +330,13 @@ export function AiPrompt({ type, onSaved, onManual }: { type: WorkType; onSaved?
                 <span className="bg-ai inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs font-medium text-white">
                   <Sparkles className="size-3" /> AI draft · {cfg.label}
                 </span>
-                {meta?.source === "mock" && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Mock AI (dev): no LLM key configured</span>}
+                {meta?.source === "mock" && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Mock AI (dev): no LLM configured</span>}
+                {meta?.source === "llm" && meta.model && (
+                  <span className="rounded-full border border-line px-2 py-0.5 text-xs text-secondary" title="Model that drafted this">
+                    {meta.model}
+                    {meta.ms ? ` · ${(meta.ms / 1000).toFixed(1)} s` : ""}
+                  </span>
+                )}
                 <span className="text-sm text-secondary">{meta?.message || "Review and edit before saving. Nothing is saved yet."}</span>
               </div>
             </header>
