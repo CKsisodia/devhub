@@ -13,14 +13,19 @@ export const ALLOWED_IMAGE_TYPES: Record<string, string> = {
 
 export const uploadDir = () => path.resolve(config.uploads.localDir);
 
-/** Stores an uploaded image in Vercel Blob when BLOB_READ_WRITE_TOKEN is set, else on local disk (dev). */
+export const BLOB_PREFIX = "wireframes/";
+
+/**
+ * Stores an uploaded image in a PRIVATE Vercel Blob store when BLOB_READ_WRITE_TOKEN is set, else on local
+ * disk (dev). Either way the app only hands out /api/uploads/files/<key>, which requires a signed-in session.
+ */
 export async function storeFile(buffer: Buffer, mimeType: string, originalName: string): Promise<{ url: string; storage: "blob" | "local" }> {
   const ext = ALLOWED_IMAGE_TYPES[mimeType] ?? path.extname(originalName);
   const key = `${randomUUID()}${ext}`;
   if (config.uploads.blobToken) {
     const { put } = await import("@vercel/blob");
-    const blob = await put(`wireframes/${key}`, buffer, { access: "public", contentType: mimeType, token: config.uploads.blobToken });
-    return { url: blob.url, storage: "blob" };
+    await put(`${BLOB_PREFIX}${key}`, buffer, { access: "private", contentType: mimeType, token: config.uploads.blobToken, addRandomSuffix: false });
+    return { url: `/api/uploads/files/${key}`, storage: "blob" };
   }
   await mkdir(uploadDir(), { recursive: true });
   await writeFile(path.join(uploadDir(), key), buffer);

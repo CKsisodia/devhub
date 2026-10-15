@@ -1,5 +1,6 @@
 import express, { type ErrorRequestHandler, type RequestHandler, type Router } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import multer from "multer";
 import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
@@ -94,7 +95,18 @@ export interface AppOptions {
 export function createApp(opts: AppOptions = {}) {
   const app = express();
   app.disable("x-powered-by");
-  app.set("trust proxy", true);
+  // Render (and similar hosts) put exactly one proxy in front of the app. Trusting only that hop means
+  // req.ip / req.protocol can't be spoofed with a client-supplied X-Forwarded-For. Locally: no proxy.
+  if (config.isProd) app.set("trust proxy", 1);
+  // JSON API: strict CSP, no framing, nosniff, no referrer, HSTS (helmet defaults) in production.
+  app.use(
+    helmet({
+      contentSecurityPolicy: { useDefaults: false, directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+      crossOriginResourcePolicy: { policy: "same-origin" },
+      referrerPolicy: { policy: "no-referrer" },
+      strictTransportSecurity: config.isProd,
+    }),
+  );
 
   app.use(cors({ origin: [config.websiteDomain, ...config.corsOrigins], credentials: true, allowedHeaders: ["content-type"] }));
 

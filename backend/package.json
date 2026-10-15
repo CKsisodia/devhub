@@ -5,7 +5,7 @@
   "description": "DevHub / FE Panel API service (Express + Prisma, email + password + TOTP auth)",
   "type": "module",
   "engines": {
-    "node": ">=20.9"
+    "node": ">=22.9 <25"
   },
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
@@ -18,6 +18,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
+    "create-admin": "tsx --env-file-if-exists=.env src/scripts/create-admin.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
@@ -29,6 +30,7 @@
     "@vercel/blob": "^2.8.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "helmet": "^8.3.0",
     "multer": "^2.4.0",
     "otplib": "^13.5.0",
     "qrcode": "^1.5.4",

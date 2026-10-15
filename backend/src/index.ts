@@ -1,8 +1,9 @@
 import { createApp } from "./app.js";
-import { config } from "./config.js";
+import { assertProductionConfig, config } from "./config.js";
 import { parseKey, usingDevKey } from "./lib/crypto.js";
 import { llmMode } from "./lib/llm.js";
 
+assertProductionConfig(); // fail fast on missing production settings
 parseKey(config.auth.totpEncryptionKey, config.isProd); // fail fast on a missing / malformed key in production
 
 const app = createApp();

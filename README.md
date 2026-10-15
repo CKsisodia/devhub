@@ -115,6 +115,7 @@ To stop: `Ctrl+C` in both terminals, then `docker compose down` (add `-v` to del
 | backend   | `npm run db:migrate`  | Create a new migration after editing `schema.prisma` (dev) |
 | backend   | `npm run db:seed`     | **Wipes** app tables and loads the fake example data |
 | backend   | `npm run db:reset`    | Drop, re-migrate and re-seed the database |
+| backend   | `npm run create-admin -- --email X --name Y` | Create the single production admin (no demo data; password prompted or from `ADMIN_PASSWORD`; refuses if an admin exists) |
 | backend   | `npm test`            | Permission, password/TOTP and AI-draft tests. The sign-in flow test uses the DB in `DATABASE_URL` (creates and removes its own user) and is skipped when no DB is reachable |
 | both      | `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
 | frontend  | `npm run dev` / `npm run build` / `npm start` | Next.js on port 3000 |
@@ -311,24 +312,23 @@ Each project has its own doc space, plus a team-wide **General** space. Pages ne
 
 ## Deployment notes
 
-**Frontend → Vercel**
+Full step-by-step guide (Neon → Render → Vercel → admin): `docs/TECHNICAL.md`, section 9. In short:
 
-1. Import the repo in Vercel and set **Root Directory** to `frontend` (framework: Next.js).
-2. Set the environment variable `BACKEND_URL=https://<your-backend-host>`.
-3. Deploy. `/api/*` is rewritten to the backend, so the browser never calls the backend directly and the
-   session cookie stays first-party on the Vercel domain.
+1. **Database (Neon):** create a project near the backend region; copy the direct connection string (`?sslmode=require`).
+2. **Backend (Render web service, Starter, 1 instance):** root `backend`, Node 22 (`.node-version`), build
+   `npm ci --include=dev && npm run build`, pre-deploy `npx prisma migrate deploy`, start `npm start`, health check `/api/health`.
+   Env: `NODE_ENV=production`, `DATABASE_URL`, `TOTP_ENCRYPTION_KEY` (`openssl rand -base64 32`), `WEBSITE_DOMAIN`
+   (the https Vercel URL), `LLM_BASE_URL=https://api.groq.com/openai/v1`, `LLM_MODEL=openai/gpt-oss-120b`, `LLM_API_KEY`,
+   `BLOB_READ_WRITE_TOKEN` (private Vercel Blob store). The API refuses to start if a required value is missing.
+3. **Frontend (Vercel):** root `frontend`, `BACKEND_URL=https://<service>.onrender.com`, deploy; then set the backend's
+   `WEBSITE_DOMAIN` to the Vercel URL and redeploy it.
+4. **First admin (no demo data):** in the Render Shell run
+   `npm run create-admin -- --email you@company.com --name "Your Name"` (password prompted, or `ADMIN_PASSWORD`),
+   then sign in and scan the QR code. **Never run `npm run db:seed` in production** (it wipes every table).
 
-**Backend: hosting options.** It is a standard long-running Node service, so it can't run as-is on Vercel.
-
-- **Render, Railway or Fly.io** (simplest): build with `npm ci && npx prisma migrate deploy && npm run build`,
-  start with `npm start`, Node 20+.
-- **Google Cloud Run, AWS App Runner or a small VM** with the same commands (or your own Dockerfile).
-- Production env: `NODE_ENV=production`, `DATABASE_URL` (Neon or Supabase; use the direct, non-pooled URL for
-  `migrate deploy`), `WEBSITE_DOMAIN` set to the Vercel URL, **`TOTP_ENCRYPTION_KEY`** (required), the `LLM_*` settings (see *AI drafting with a local model*),
-  and `BLOB_READ_WRITE_TOKEN` (local disk on most hosts isn't persistent). HTTPS is required (Secure cookie).
-- First admin in production: run `npm run db:seed` only for a demo environment (it wipes the app tables and
-  uses known dev passwords). For a real environment, insert the admin row once (argon2 hash as in *Account
-  recovery*, `must_change_password=true`) and let them enrol two-factor at first sign-in.
+Production hardening built in: helmet security headers on the API and `X-Frame-Options`/`frame-ancestors`,
+`nosniff`, `Referrer-Policy` and HSTS on the frontend; `trust proxy` = 1 hop in production only; Secure cookies;
+uploads stored privately and served only to signed-in users.
 
 ## Troubleshooting
 

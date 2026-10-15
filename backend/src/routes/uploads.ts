@@ -1,12 +1,14 @@
 import { Router } from "express";
 import multer from "multer";
 import path from "node:path";
+import { Readable } from "node:stream";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAdmin } from "../auth/middleware.js";
 import { config } from "../config.js";
 import { badRequest, notFound } from "../lib/errors.js";
-import { ALLOWED_IMAGE_TYPES, storeFile, uploadDir } from "../lib/storage.js";
+import { ALLOWED_IMAGE_TYPES, BLOB_PREFIX, storeFile, uploadDir } from "../lib/storage.js";
 
 export const uploadsRouter = Router();
 
@@ -33,13 +35,23 @@ uploadsRouter.post("/", requireAdmin, upload.single("file"), async (req, res) =>
   res.status(201).json({ id: attachment.id, url: stored.url, fileName: attachment.fileName, storage: stored.storage });
 });
 
-/** Local-disk fallback (dev). Served to signed-in users only, with a locked-down CSP so SVGs can't run scripts. */
-uploadsRouter.get("/files/:name", (req, res) => {
+/** Served to signed-in users only (private Vercel Blob in production, local disk in dev), with a locked-down CSP so SVGs can't run scripts. */
+uploadsRouter.get("/files/:name", async (req, res) => {
   const name = path.basename(String(req.params.name));
   if (!/^[0-9a-f-]{36}\.[a-z]+$/.test(name)) throw notFound("File not found");
   res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "private, max-age=86400");
+  if (config.uploads.blobToken) {
+    const { get } = await import("@vercel/blob");
+    const result = await get(`${BLOB_PREFIX}${name}`, { access: "private", token: config.uploads.blobToken }).catch(() => null);
+    if (!result || result.statusCode !== 200 || !result.stream) throw notFound("File not found");
+    const ext = path.extname(name);
+    const type = Object.entries(ALLOWED_IMAGE_TYPES).find(([, e]) => e === ext)?.[0] ?? "application/octet-stream";
+    res.setHeader("Content-Type", type);
+    Readable.fromWeb(result.stream as unknown as WebReadableStream).pipe(res);
+    return;
+  }
   res.sendFile(path.join(uploadDir(), name), (err) => {
     if (err && !res.headersSent) res.status(404).json({ error: "File not found" });
   });

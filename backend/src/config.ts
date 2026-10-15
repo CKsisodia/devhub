@@ -21,8 +21,8 @@ export const config = {
   port: Number(str("PORT", "4000")),
   appName: str("APP_NAME", "FE Panel"),
 
-  /** Public origin of the frontend (Next.js). Mutating requests from other origins are rejected. */
-  websiteDomain: str("WEBSITE_DOMAIN", "http://localhost:3000"),
+  /** Public origin of the frontend (Next.js). FRONTEND_ORIGIN is accepted as an alias of WEBSITE_DOMAIN. Mutating requests from other origins are rejected. */
+  websiteDomain: str("WEBSITE_DOMAIN", process.env.FRONTEND_ORIGIN || "http://localhost:3000").replace(/\/$/, ""),
   /** Extra origins allowed to call the API directly (comma separated). */
   corsOrigins: str("CORS_ORIGINS", "")
     .split(",")
@@ -68,3 +68,19 @@ export const config = {
     maxBytes: Number(str("UPLOAD_MAX_BYTES", String(5 * 1024 * 1024))),
   },
 };
+
+/**
+ * Production fail-fast: refuse to start with missing or local-only settings when NODE_ENV=production.
+ * Called from index.ts (not at import time, so CLI scripts such as create-admin still work).
+ */
+export function assertProductionConfig(): void {
+  if (!config.isProd) return;
+  const problems: string[] = [];
+  if (!process.env.DATABASE_URL) problems.push("DATABASE_URL is not set");
+  if (!process.env.TOTP_ENCRYPTION_KEY) problems.push("TOTP_ENCRYPTION_KEY is not set (openssl rand -base64 32)");
+  if (!process.env.WEBSITE_DOMAIN && !process.env.FRONTEND_ORIGIN) problems.push("WEBSITE_DOMAIN (or FRONTEND_ORIGIN) is not set to the frontend URL");
+  else if (!config.websiteDomain.startsWith("https://")) problems.push("WEBSITE_DOMAIN must be an https:// origin in production");
+  if (!config.auth.cookieSecure) problems.push("COOKIE_SECURE must not be false in production");
+  if (problems.length) throw new Error(`Refusing to start in production:\n  - ${problems.join("\n  - ")}`);
+  if (bool("LLM_MOCK", false)) console.warn("  Note: LLM_MOCK is ignored in production (no mock AI drafts).");
+}

@@ -747,7 +747,6 @@ flowchart LR
   Render -->|"DATABASE_URL with sslmode=require"| Neon[("Neon Postgres")]
   Render -->|"BLOB_READ_WRITE_TOKEN"| Blob["Vercel Blob"]
   Render -->|"LLM_BASE_URL / LLM_API_KEY"| LLM["OpenAI-compatible API (Ollama VM, Groq, OpenRouter)"]
-  Blob -.->|"public image URLs"| User
 ```
 
 - **Database**: Neon Postgres (Supabase as the alternative).
@@ -772,25 +771,16 @@ Order of work: database → backend → frontend → set the backend's `WEBSITE_
      npx prisma migrate deploy
    ```
 
-4. **Create only the admin, no fake data.** Never run `npm run db:seed` against production: it deletes every app table and creates users with known dev passwords. Instead, hash a temporary password and insert the two roles and the admin:
+4. **Create only the admin, no fake data.** Never run `npm run db:seed` against production: it deletes every app table and creates users with known dev passwords. Use the admin script instead, either in the Render Shell after the first deploy or from your Mac:
 
    ```bash
    cd ~/Desktop/devhub/backend
-   node -e 'import("@node-rs/argon2").then(async (a) => console.log(await a.hash(process.argv[1])))' 'Choose-a-temp-pass-1'
+   DATABASE_URL='postgresql://...neon.tech/devhub?sslmode=require' \
+     npm run create-admin -- --email you@yourcompany.com --name "Chandrakiran Sisodia"
+   # Password is prompted (hidden) twice, or taken from ADMIN_PASSWORD. Hashed with argon2id.
    ```
 
-   ```sql
-   -- In the Neon SQL Editor (or psql with the direct URL). Paste the hash between the quotes.
-   BEGIN;
-   INSERT INTO "Role" (id, name) VALUES (gen_random_uuid(), 'admin'), (gen_random_uuid(), 'viewer')
-     ON CONFLICT (name) DO NOTHING;
-   INSERT INTO users (id, name, email, password_hash, must_change_password, role_id)
-     SELECT gen_random_uuid(), 'Chandrakiran Sisodia', 'you@yourcompany.com', '<argon2id hash>', true, id
-     FROM "Role" WHERE name = 'admin';
-   COMMIT;
-   ```
-
-   Use a lower-case email. At first sign-in the admin enrols TOTP and chooses a new password; all other users are then added from the Users page. This SQL was tested on a freshly migrated database: the admin signed in and reached the QR enrolment step.
+   It creates the `admin` and `viewer` roles if missing and the single admin user, and refuses to run if an admin (or that email) already exists. At first sign-in the admin scans the QR code with an authenticator app; all other users are then added from the Users page.
 
 **Supabase instead of Neon**: create a project and open **Connect** for the Prisma connection strings. The direct host `db.<ref>.supabase.co:5432` may be IPv6-only, so from Render use the **Session pooler** string (port 5432 on the `pooler.supabase.com` host), which also works for `prisma migrate deploy`. The Transaction pooler (port 6543) needs `?pgbouncer=true` and is not suitable for migrations. Run the same admin SQL in the Supabase SQL Editor.
 
@@ -816,18 +806,19 @@ Order of work: database → backend → frontend → set the backend's `WEBSITE_
 
    | Variable | Value |
    |---|---|
-   | `NODE_VERSION` | `22` (must resolve to 22.9 or later; a `.node-version` file also works) |
+   | `NODE_VERSION` | Optional: `backend/.node-version` already pins `22` (`engines`: `>=22.9 <25`) |
    | `NODE_ENV` | `production` |
    | `DATABASE_URL` | Neon direct (or pooled) URL with `?sslmode=require` |
-   | `WEBSITE_DOMAIN` | Exact frontend origin, e.g. `https://devhub.example.com`. On the first deploy use the `*.vercel.app` URL, then update it after adding the custom domain |
+   | `WEBSITE_DOMAIN` (alias `FRONTEND_ORIGIN`) | Exact `https://` frontend origin, e.g. `https://devhub.example.com`. On the first deploy use the `*.vercel.app` URL, then update it after adding the custom domain |
    | `CORS_ORIGINS` | Optional: the `*.vercel.app` production URL, if it should keep working alongside the custom domain |
    | `TOTP_ENCRYPTION_KEY` | Output of `openssl rand -base64 32` |
    | `APP_NAME`, `TOTP_ISSUER` | Optional, e.g. `FE Panel` |
-   | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TIMEOUT_MS` | Optional. See 7.3 *AI drafting*. Without an LLM, AI drafting shows "not configured" and manual entry still works |
-   | `BLOB_READ_WRITE_TOKEN` | From the Vercel Blob store (9.3) |
+   | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Groq: `https://api.groq.com/openai/v1`, `openai/gpt-oss-120b`, your Groq key (create a fresh one for production). Without an LLM, AI drafting shows "not configured" and manual entry still works. `LLM_MOCK` is always ignored in production |
+   | `BLOB_READ_WRITE_TOKEN` | From a **private** Vercel Blob store (9.3). Files are served only through `/api/uploads/files/...` to signed-in users |
    | `COOKIE_SECURE` | Leave empty (true in production) |
 
-   Do not set `PORT`; Render provides it.
+   Do not set `PORT`; Render provides it. With `NODE_ENV=production` the API **refuses to start** if `DATABASE_URL` or `TOTP_ENCRYPTION_KEY` is missing or `WEBSITE_DOMAIN` is not an `https://` origin, and it trusts exactly one proxy hop (`trust proxy` = 1), so `X-Forwarded-For` can't be spoofed to dodge the login rate limit.
+5. After the first successful deploy, open Render → Shell and create the admin: `npm run create-admin -- --email you@yourcompany.com --name "Your Name"`.
 4. Deploy and read the log. You should see lines like these (the `localhost` in the first line is only a log message):
 
    ```text
@@ -879,7 +870,7 @@ Never commit `.env` or `.env.local` (both are git-ignored).
 4. In the browser developer tools, check that the `devhub_session` cookie is on the frontend domain and is `HttpOnly`, `Secure` and `SameSite=Lax`.
 5. Sign out and in again (password, then code). Re-using the same code within 30 s must fail.
 6. Create a project and a task by hand; try the AI prompt in Tasks if a key is set, then confirm and save.
-7. Create a doc with a Mermaid block, upload an image, reload, and check the image still shows (its URL should be on `blob.vercel-storage.com`). Try an image close to 5 MB to confirm the proxy passes it.
+7. Create a doc with a Mermaid block, upload an image, reload, and check the image still shows (its URL is `/api/uploads/files/...`; opening it signed out returns 401). Try an image close to 5 MB to confirm the proxy passes it.
 8. Add a Viewer on the Users page, sign in as them in a private window, enrol TOTP and set a password. Confirm they see no add, edit or delete controls, **can** change a task's status, and cannot open another user's dashboard.
 9. Deactivate the test Viewer and confirm their session ends.
 10. Confirm the database provider's backups or restore window (see 10.5).
@@ -944,23 +935,23 @@ jobs:
 
 ### 9.8 Before going live
 
-Found while reading the code. None of these has been changed in the code; each needs a setting or a decision.
+Found while reading the code. Items marked **Fixed** were addressed in the pre-production hardening commit; the rest still need a setting or a decision.
 
-1. **`NODE_ENV=production` is essential on the backend.** The fail-fast check for `TOTP_ENCRYPTION_KEY` only runs when `NODE_ENV=production`. Without it the backend silently uses the built-in **dev TOTP key**, the cookie is **not Secure**, and the AI **mock** can be active.
+1. **Fixed (still set it):** with `NODE_ENV=production` the API fails fast on missing `DATABASE_URL`, `TOTP_ENCRYPTION_KEY` or a non-https `WEBSITE_DOMAIN`; cookies are Secure and the AI mock is ignored. Without `NODE_ENV=production` none of this applies.
 2. **Localhost defaults.** `WEBSITE_DOMAIN` defaults to `http://localhost:3000` and the frontend's `BACKEND_URL` to `http://localhost:4000`. If either is missing in production, sign-in fails (403 from the Origin check, or the proxy cannot reach the API). `BACKEND_URL` is fixed at build time.
 3. **Local-disk uploads are not persistent** on Render, Railway, Fly.io or Cloud Run (ephemeral filesystems, wiped on each deploy). Set `BLOB_READ_WRITE_TOKEN` before anyone uploads.
-4. **Blob uploads are public.** `lib/storage.ts` uploads with `access: "public"`, so anyone with an image URL can open it without signing in (URLs contain random UUIDs). Local-disk files are only served to signed-in users. Decide whether this is acceptable for wireframes.
+4. **Fixed:** Blob uploads are now `access: "private"` and streamed through the authenticated `/api/uploads/files/...` route (create the Blob store as private).
 5. **Single instance only.** The rate limiter is in memory: per process, reset on restart. Do not scale out without moving it to Redis or the database.
-6. **`trust proxy` is `true`** in `app.ts`, so `req.ip` comes from the left-most `X-Forwarded-For` value, which a client can set. The per-IP login limit can therefore be bypassed (the per-email and per-user TOTP limits still apply). Consider setting `trust proxy` to the real number of proxy hops for the chosen host.
-7. **Node version mismatch.** `engines` says `>=20.9`, but `npm run dev` and `npm start` use `--env-file-if-exists` (Node 22.9+). Pin Node 22 or 24 everywhere.
+6. **Fixed:** `trust proxy` is `1` in production only (Render's single proxy hop) and off locally.
+7. **Fixed:** `engines` is `>=22.9 <25` in both packages, with `.nvmrc` / `.node-version` set to 22.
 8. **Build needs devDependencies.** `typescript` and the `prisma` CLI are devDependencies; use `npm ci --include=dev` when `NODE_ENV=production` is set during the build.
-9. **No production admin bootstrap.** `prisma/seed.ts` wipes every table and creates known passwords, so it must never run against production. Create the first admin with the SQL in 9.1.
+9. **Fixed:** use `npm run create-admin` (9.1 step 4); never `db:seed` in production.
 10. **Pooled connection strings.** `schema.prisma` has no `directUrl`; if `DATABASE_URL` is pooled, run `migrate deploy` with the direct URL.
 11. **Single admin with no self-recovery in the UI.** If the admin loses their authenticator, recovery is the SQL in 8.8 run against production. Keep console access and a tested procedure, and consider giving a second trusted person database console access.
 12. **Expired sessions are only removed when looked up again.** Abandoned rows slowly accumulate in `sessions`. Harmless at this scale; optionally run `DELETE FROM sessions WHERE expires_at < now();` now and then.
 13. **The health check does not touch the database.** `/api/health` reports OK even if Postgres is unreachable. Use the smoke test (or add a database ping later) for real monitoring.
 14. **Preview deployments.** Vercel preview URLs are not allowed origins and would proxy to whatever `BACKEND_URL` Preview has. Point Preview at a staging backend or avoid previews with production data.
-15. **No security headers** (CSP, `X-Frame-Options`, `Referrer-Policy`) are set in `next.config.ts`. Consider adding a `headers()` block.
+15. **Fixed:** helmet on the API; `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` and HSTS (production) in `next.config.ts`. A full script CSP is not set.
 16. **Minor:** the upload error says "max 5 MB" whatever `UPLOAD_MAX_BYTES` is; `NEXT_PUBLIC_APP_NAME` is documented but unused; the `docker-compose.yml` defaults (port 5432, Postgres 17) differ from the owner's Mac (5433, Postgres 16), which the root `.env` handles.
 
 ## 10. Accessing database data

@@ -4,7 +4,7 @@
   "private": true,
   "description": "DevHub / FE Panel web app (Next.js App Router)",
   "engines": {
-    "node": ">=20.9"
+    "node": ">=22.9 <25"
   },
   "scripts": {
     "dev": "next dev -p 3000",
