@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAdmin } from "../auth/middleware.js";
-import { draftWorkItems } from "../lib/llm.js";
-import { aiDraftSchema } from "../lib/schemas.js";
+import { draftWorkItems, rephraseNotes } from "../lib/llm.js";
+import { aiDraftSchema, aiRephraseSchema } from "../lib/schemas.js";
 import { ymd } from "../lib/dto.js";
 
 export const aiRouter = Router();
@@ -27,4 +27,10 @@ aiRouter.post("/draft", requireAdmin, async (req, res) => {
       items: items.map((i) => ({ ...i, timeboxEnd: ymd(i.timeboxEnd) })),
     }),
   );
+});
+
+/** Rephrases a work item's notes into readable, professional text. Returns a suggestion only; nothing is saved. */
+aiRouter.post("/rephrase", requireAdmin, async (req, res) => {
+  const { text, title } = aiRephraseSchema.parse(req.body);
+  res.json(await rephraseNotes(text, title));
 });

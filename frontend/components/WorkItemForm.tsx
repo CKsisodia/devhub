@@ -8,6 +8,7 @@ import type { PocOutcome, WorkItem, WorkStatus, WorkType } from "@/lib/types";
 import { hasExtra, WORK } from "@/lib/workTypes";
 import { Button, Field, Input, Modal, Select, Textarea } from "./ui";
 import { PeriodSelect } from "./WorkBits";
+import { AttachmentsEditor, LinksEditor, newLinkDraft, RephraseNotes, uploadAttachments, validateLinks, type LinkDraft } from "./TaskExtras";
 import { useToast } from "./toast";
 
 /** Admin-only: add an item to a work section by hand, or edit one. Shows only the section's own fields. */
@@ -27,13 +28,22 @@ export function WorkItemForm({ type, item, open, onClose, defaultProjectId, onSa
     outcome: item?.outcome ?? ("" as PocOutcome | ""),
   });
   const [error, setError] = useState<string>();
+  // Tasks only: links (replaced as a list on save), new files to upload and existing files to remove.
+  const [links, setLinks] = useState<LinkDraft[]>(() => (item?.links ?? []).map(newLinkDraft));
+  const [linkErrors, setLinkErrors] = useState<Record<string, string>>({});
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   async function save() {
     if (!form.title.trim()) return setError("Title is required");
+    const checked = cfg.taskExtras ? validateLinks(links) : { links: [], errors: {} };
+    setLinkErrors(checked.errors);
+    if (Object.keys(checked.errors).length) return;
     setSaving(true);
     const body: Record<string, unknown> = { title: form.title.trim(), notes: form.notes, projectId: form.projectId || null, status: form.status };
+    if (cfg.taskExtras) body.links = checked.links;
     if (hasExtra(type, "targetPeriod")) body.targetPeriod = form.targetPeriod;
     if (hasExtra(type, "goal")) body.goal = form.goal;
     if (hasExtra(type, "timeboxEnd")) body.timeboxEnd = form.timeboxEnd || null;
@@ -43,6 +53,19 @@ export function WorkItemForm({ type, item, open, onClose, defaultProjectId, onSa
       const saved = item
         ? await api<WorkItem>(`/api/${cfg.path}/${item.id}`, { method: "PATCH", body })
         : await api<WorkItem>(`/api/${cfg.path}`, { body });
+      if (cfg.taskExtras) {
+        // The item itself is saved at this point; file changes are separate requests.
+        try {
+          for (const id of removedIds) await api(`/api/${cfg.path}/${saved.id}/attachments/${id}`, { method: "DELETE" });
+          if (pendingFiles.length) await uploadAttachments(cfg.path, saved.id, pendingFiles);
+        } catch (e) {
+          toast(`Saved, but attachments weren't all updated: ${e instanceof Error ? e.message : "upload failed"}`, "error");
+          refreshWorkData();
+          onSaved?.(saved.id);
+          onClose();
+          return;
+        }
+      }
       toast(item ? "Changes saved" : `Added to ${cfg.label}`);
       refreshWorkData();
       onSaved?.(saved.id);
@@ -79,9 +102,29 @@ export function WorkItemForm({ type, item, open, onClose, defaultProjectId, onSa
             <Input id="w-goal" value={form.goal} onChange={(e) => set("goal", e.target.value)} placeholder="e.g. Decide whether signals are worth adopting" />
           </Field>
         )}
-        <Field label="Notes" htmlFor="w-notes" helper="Optional. Details, links, decisions.">
+        <Field label="Notes" htmlFor="w-notes" helper={cfg.taskExtras ? undefined : "Optional. Details, links, decisions."}>
           <Textarea id="w-notes" rows={hasExtra(type, "findings") ? 3 : 5} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+          {cfg.taskExtras && <RephraseNotes notes={form.notes} title={form.title} onAccept={(text) => set("notes", text)} />}
         </Field>
+        {cfg.taskExtras && (
+          <>
+            <LinksEditor rows={links} onChange={setLinks} errors={linkErrors} />
+            <AttachmentsEditor
+              existing={item?.attachments ?? []}
+              removedIds={removedIds}
+              onToggleRemove={(id) =>
+                setRemovedIds((s) => {
+                  const n = new Set(s);
+                  if (n.has(id)) n.delete(id);
+                  else n.add(id);
+                  return n;
+                })
+              }
+              pending={pendingFiles}
+              onPendingChange={setPendingFiles}
+            />
+          </>
+        )}
         {hasExtra(type, "findings") && (
           <Field label="Findings" htmlFor="w-findings" helper="What you learned so far.">
             <Textarea id="w-findings" rows={3} value={form.findings} onChange={(e) => set("findings", e.target.value)} />

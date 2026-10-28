@@ -8,7 +8,7 @@ import { prisma } from "../db.js";
 import { requireAdmin } from "../auth/middleware.js";
 import { config } from "../config.js";
 import { badRequest, notFound } from "../lib/errors.js";
-import { ALLOWED_IMAGE_TYPES, BLOB_PREFIX, storeFile, uploadDir } from "../lib/storage.js";
+import { ALLOWED_IMAGE_TYPES, BLOB_PREFIX, mimeForExt, storeFile, uploadDir } from "../lib/storage.js";
 
 export const uploadsRouter = Router();
 
@@ -42,12 +42,15 @@ uploadsRouter.get("/files/:name", async (req, res) => {
   res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "private, max-age=86400");
+  const ext = path.extname(name);
+  const isImage = Object.values(ALLOWED_IMAGE_TYPES).includes(ext);
+  // Task attachments that aren't images (PDF, Office, ZIP…) are always downloaded, never rendered inline.
+  if (!isImage) res.setHeader("Content-Disposition", "attachment");
   if (config.uploads.blobToken) {
     const { get } = await import("@vercel/blob");
     const result = await get(`${BLOB_PREFIX}${name}`, { access: "private", token: config.uploads.blobToken }).catch(() => null);
     if (!result || result.statusCode !== 200 || !result.stream) throw notFound("File not found");
-    const ext = path.extname(name);
-    const type = Object.entries(ALLOWED_IMAGE_TYPES).find(([, e]) => e === ext)?.[0] ?? "application/octet-stream";
+    const type = mimeForExt(ext) ?? "application/octet-stream";
     res.setHeader("Content-Type", type);
     Readable.fromWeb(result.stream as unknown as WebReadableStream).pipe(res);
     return;

@@ -25,6 +25,25 @@ const extra = {
   outcome: z.enum(POC_OUTCOMES).nullable(),
 };
 
+/** A link on a work item: http(s) only, optional label. */
+export const workItemLinkSchema = z.object({
+  url: z
+    .string()
+    .trim()
+    .min(1, "URL is required")
+    .max(2000)
+    .refine((s) => {
+      try {
+        const u = new URL(s);
+        return (u.protocol === "http:" || u.protocol === "https:") && Boolean(u.hostname);
+      } catch {
+        return false;
+      }
+    }, "Use a full http:// or https:// URL"),
+  label: z.string().trim().max(200).default(""),
+});
+const links = z.array(workItemLinkSchema).max(25, "Up to 25 links");
+
 export const workItemCreateSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
   notes: z.string().max(20000).default(""),
@@ -35,6 +54,7 @@ export const workItemCreateSchema = z.object({
   timeboxEnd: extra.timeboxEnd.optional(),
   findings: extra.findings.optional(),
   outcome: extra.outcome.optional(),
+  links: links.optional(),
 });
 
 export const workItemUpdateSchema = z
@@ -44,6 +64,7 @@ export const workItemUpdateSchema = z
     projectId: z.uuid().nullable(),
     status: z.enum(WORK_STATUSES),
     ...extra,
+    links,
   })
   .partial();
 
@@ -59,7 +80,14 @@ export function assertExtrasAllowed(type: WorkType, input: Record<string, unknow
   const allowed = WORK_TYPE_META[type].extras;
   const bad = EXTRA_FIELDS.filter((f) => input[f] !== undefined && !allowed.includes(f));
   if (bad.length) throw badRequest(`${bad.join(", ")}: not used for ${WORK_TYPE_META[type].label} items`);
+  if (input.links !== undefined && !WORK_TYPE_META[type].attachments) throw badRequest(`links: not used for ${WORK_TYPE_META[type].label} items`);
 }
+
+/** AI rephrase of a work item's notes (never saved by the server). */
+export const aiRephraseSchema = z.object({
+  text: z.string().trim().min(1, "Write some notes first").max(20000),
+  title: z.string().trim().max(200).optional(),
+});
 
 export const projectCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),

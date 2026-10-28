@@ -36,6 +36,22 @@ export interface ExtraFields {
 }
 
 /** One item in Tasks, Roadmap, R&D or POC. */
+export interface WorkAttachment {
+  id: string;
+  fileName: string;
+  /** Authenticated app URL: /api/uploads/files/<key> */
+  url: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  createdAt: string;
+}
+
+export interface WorkLink {
+  id: string;
+  url: string;
+  label: string;
+}
+
 export interface WorkItem {
   id: string;
   type: WorkType;
@@ -49,6 +65,10 @@ export interface WorkItem {
   timeboxEnd: string | null;
   findings: string;
   outcome: PocOutcome | null;
+  /** Tasks only (empty elsewhere). */
+  attachments: WorkAttachment[];
+  /** Tasks only (empty elsewhere). */
+  links: WorkLink[];
   createdBy: UserRef;
   createdAt: string;
   updatedAt: string;

@@ -24,13 +24,15 @@ export interface WorkTypeMeta {
   /** e.g. "task", "roadmap item" (used in messages) */
   noun: string;
   extras: ExtraField[];
+  /** File attachments and links on items (Tasks only for now). */
+  attachments: boolean;
 }
 
 export const WORK_TYPE_META: Record<WorkType, WorkTypeMeta> = {
-  TASK: { path: "tasks", entity: "task", label: "Tasks", noun: "task", extras: [] },
-  ROADMAP: { path: "roadmap", entity: "roadmap", label: "Roadmap", noun: "roadmap item", extras: ["targetPeriod"] },
-  RND: { path: "rnd", entity: "rnd", label: "R&D", noun: "R&D item", extras: ["goal", "timeboxEnd", "findings"] },
-  POC: { path: "poc", entity: "poc", label: "POC", noun: "POC", extras: ["goal", "timeboxEnd", "findings", "outcome"] },
+  TASK: { path: "tasks", entity: "task", label: "Tasks", noun: "task", extras: [], attachments: true },
+  ROADMAP: { path: "roadmap", entity: "roadmap", label: "Roadmap", noun: "roadmap item", extras: ["targetPeriod"], attachments: false },
+  RND: { path: "rnd", entity: "rnd", label: "R&D", noun: "R&D item", extras: ["goal", "timeboxEnd", "findings"], attachments: false },
+  POC: { path: "poc", entity: "poc", label: "POC", noun: "POC", extras: ["goal", "timeboxEnd", "findings", "outcome"], attachments: false },
 };
 
 export const WORK_ENTITY_TYPES = WORK_TYPES.map((t) => WORK_TYPE_META[t].entity);

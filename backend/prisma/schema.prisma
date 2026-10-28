@@ -145,6 +145,9 @@ model WorkItem {
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
+  attachments Attachment[] // Tasks only (for now)
+  links       WorkItemLink[] // Tasks only (for now)
+
   @@index([type, status])
   @@index([projectId])
   @@map("work_items")
@@ -190,16 +193,35 @@ model Doc {
 }
 
 model Attachment {
-  id           String   @id @default(uuid()) @db.Uuid
-  docId        String?  @map("doc_id") @db.Uuid
-  doc          Doc?     @relation(fields: [docId], references: [id], onDelete: SetNull)
-  fileUrl      String   @map("file_url")
-  fileName     String   @map("file_name")
-  uploadedById String   @map("uploaded_by") @db.Uuid
-  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
-  createdAt    DateTime @default(now()) @map("created_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  docId        String?   @map("doc_id") @db.Uuid
+  doc          Doc?      @relation(fields: [docId], references: [id], onDelete: SetNull)
+  workItemId   String?   @map("work_item_id") @db.Uuid // set for task attachments
+  workItem     WorkItem? @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  mimeType     String?   @map("mime_type")
+  sizeBytes    Int?      @map("size_bytes")
+  fileUrl      String    @map("file_url")
+  fileName     String    @map("file_name")
+  uploadedById String    @map("uploaded_by") @db.Uuid
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime  @default(now()) @map("created_at")
 
+  @@index([workItemId])
   @@map("attachments")
+}
+
+/// External links on a work item (Tasks only for now): http(s) URL plus an optional label.
+model WorkItemLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  workItemId String   @map("work_item_id") @db.Uuid
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  url        String
+  label      String   @default("")
+  position   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([workItemId])
+  @@map("work_item_links")
 }
 
 model ActivityLog {

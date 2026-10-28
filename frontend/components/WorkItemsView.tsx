@@ -14,6 +14,7 @@ import { itemVariants, listVariants } from "./motion";
 import { OutcomePill, PeriodChip, StatusSelect, TimeboxChip } from "./WorkBits";
 import { WorkItemForm } from "./WorkItemForm";
 import { AiPrompt } from "./AiPrompt";
+import { TaskExtrasView } from "./TaskExtras";
 import { useToast } from "./toast";
 
 function Clamp({ text, lines = 3, className }: { text: string; lines?: 2 | 3; className?: string }) {
@@ -66,6 +67,7 @@ export function WorkCard({ item, isAdmin, highlight, showProject, onStatus, onEd
         )}
       </div>
       {item.notes && <Clamp text={item.notes} className="mt-1.5" />}
+      <TaskExtrasView attachments={item.attachments} links={item.links} />
       {item.findings && (
         <div className="mt-2.5 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-2">
           <div className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900">

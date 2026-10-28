@@ -1,17 +1,28 @@
 import { Router } from "express";
+import multer from "multer";
 import type { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAdmin } from "../auth/middleware.js";
 import { diff, logActivity } from "../lib/activity.js";
 import { badRequest, notFound } from "../lib/errors.js";
-import { toDate, workItemDto, workItemInclude } from "../lib/dto.js";
+import { config } from "../config.js";
+import { attachmentDto, toDate, workItemDto, workItemInclude } from "../lib/dto.js";
+import { deleteStoredFile, resolveAttachmentType, storeFile } from "../lib/storage.js";
 import { assertExtrasAllowed, workItemBulkSchema, workItemCreateSchema, workItemStatusSchema, workItemUpdateSchema } from "../lib/schemas.js";
 import { STATUS_LABEL, WORK_STATUSES, WORK_TYPE_META, type WorkStatus, type WorkType } from "../lib/workTypes.js";
 
 type Db = typeof prisma | Prisma.TransactionClient;
 type CreateInput = z.infer<typeof workItemCreateSchema>;
 type UpdateInput = z.infer<typeof workItemUpdateSchema>;
+
+/** Task attachments: up to 10 files per upload request, each within UPLOAD_MAX_BYTES. */
+const MAX_FILES_PER_UPLOAD = 10;
+const attachmentUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.uploads.maxBytes, files: MAX_FILES_PER_UPLOAD } });
+
+type LinkInput = { url: string; label?: string };
+const linkRows = (links: LinkInput[]) => links.map((l, i) => ({ url: l.url, label: l.label ?? "", position: i }));
+const sameLinks = (a: LinkInput[], b: LinkInput[]) => JSON.stringify(a.map((l) => [l.url, l.label ?? ""])) === JSON.stringify(b.map((l) => [l.url, l.label ?? ""]));
 
 const FIELD_LABEL: Record<string, string> = { projectId: "project", targetPeriod: "target", timeboxEnd: "time box" };
 
@@ -36,8 +47,15 @@ function toData<T extends { timeboxEnd?: string | null }>(input: T) {
 export async function createWorkItem(db: Db, type: WorkType, userId: string, input: CreateInput) {
   assertExtrasAllowed(type, input);
   await assertProject(db, input.projectId);
+  const { links, ...fields } = input;
   const item = await db.workItem.create({
-    data: { ...toData(input), type, projectId: input.projectId ?? null, createdById: userId },
+    data: {
+      ...toData(fields),
+      type,
+      projectId: input.projectId ?? null,
+      createdById: userId,
+      ...(links?.length ? { links: { create: linkRows(links) } } : {}),
+    },
     include: workItemInclude,
   });
   await logActivity(db, { userId, entityType: WORK_TYPE_META[type].entity, entityId: item.id, projectId: item.projectId, action: "created", summary: `added "${item.title}"` });
@@ -46,12 +64,20 @@ export async function createWorkItem(db: Db, type: WorkType, userId: string, inp
 
 export async function updateWorkItem(db: Db, type: WorkType, userId: string, id: string, patch: UpdateInput) {
   assertExtrasAllowed(type, patch);
-  const before = await db.workItem.findUnique({ where: { id } });
+  const before = await db.workItem.findUnique({ where: { id }, include: { links: { select: { url: true, label: true }, orderBy: [{ position: "asc" }, { createdAt: "asc" }] } } });
   // An item is only reachable through its own section's URL.
   if (!before || before.type !== type) throw notFound(`${WORK_TYPE_META[type].label} item not found`);
   await assertProject(db, patch.projectId);
-  const changes = diff(before as unknown as Record<string, unknown>, patch as Record<string, unknown>);
-  const item = await db.workItem.update({ where: { id }, data: toData(patch), include: workItemInclude });
+  const { links, ...fields } = patch;
+  const changes = diff(before as unknown as Record<string, unknown>, fields as Record<string, unknown>);
+  // Links are replaced as a list, and only when they actually changed (one atomic nested write).
+  const linksChanged = links !== undefined && !sameLinks(before.links, links);
+  if (linksChanged) changes.links = { from: before.links.length, to: links.length };
+  const item = await db.workItem.update({
+    where: { id },
+    data: { ...toData(fields), ...(linksChanged ? { links: { deleteMany: {}, create: linkRows(links) } } : {}) },
+    include: workItemInclude,
+  });
   if (Object.keys(changes).length) {
     await logActivity(db, { userId, entityType: WORK_TYPE_META[type].entity, entityId: id, projectId: item.projectId, action: "updated", summary: summarise(item.title, changes), changes });
   }
@@ -110,12 +136,65 @@ export function workItemsRouter(type: WorkType) {
   });
 
   r.delete("/:id", requireAdmin, async (req, res) => {
-    const item = await prisma.workItem.findUnique({ where: { id: String(req.params.id) } });
+    const item = await prisma.workItem.findUnique({ where: { id: String(req.params.id) }, include: { attachments: { select: { fileUrl: true } } } });
     if (!item || item.type !== type) throw notFound(`${meta.label} item not found`);
-    await prisma.workItem.delete({ where: { id: item.id } });
+    await prisma.workItem.delete({ where: { id: item.id } }); // attachment rows and links cascade
+    for (const a of item.attachments) await deleteStoredFile(a.fileUrl);
     await logActivity(prisma, { userId: req.user!.id, entityType: meta.entity, entityId: item.id, projectId: item.projectId, action: "deleted", summary: `deleted "${item.title}"` });
     res.status(204).end();
   });
+
+  if (meta.attachments) {
+    const findItem = async (id: string) => {
+      const item = await prisma.workItem.findUnique({ where: { id }, select: { id: true, type: true, title: true, projectId: true } });
+      if (!item || item.type !== type) throw notFound(`${meta.label} item not found`);
+      return item;
+    };
+
+    /** Attach files (multipart field "files", up to 10 per request). Admin only. */
+    r.post("/:id/attachments", requireAdmin, attachmentUpload.array("files", MAX_FILES_PER_UPLOAD), async (req, res) => {
+      const item = await findItem(String(req.params.id));
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+      if (!files.length) throw badRequest("No files uploaded (use form field 'files').");
+      // Validate every file before storing any of them.
+      const typed = files.map((f) => {
+        // multer decodes multipart file names as latin1; restore UTF-8 names (e.g. non-English characters).
+        const name = Buffer.from(f.originalname, "latin1").toString("utf8").slice(0, 200) || "file";
+        const t = resolveAttachmentType(f.mimetype, name);
+        if (!t) throw badRequest(`"${name}": file type not allowed. Use images, PDF, text, Markdown, CSV, JSON, ZIP or Office files.`);
+        return { file: f, name, ...t };
+      });
+      const created = [];
+      for (const t of typed) {
+        const stored = await storeFile(t.file.buffer, t.mimeType, t.name, t.ext);
+        created.push(
+          await prisma.attachment.create({
+            data: { workItemId: item.id, fileUrl: stored.url, fileName: t.name, mimeType: t.mimeType, sizeBytes: t.file.size, uploadedById: req.user!.id },
+          }),
+        );
+      }
+      await logActivity(prisma, {
+        userId: req.user!.id,
+        entityType: meta.entity,
+        entityId: item.id,
+        projectId: item.projectId,
+        action: "updated",
+        summary: `attached ${created.length === 1 ? `"${created[0].fileName}"` : `${created.length} files`} to "${item.title}"`,
+      });
+      res.status(201).json(created.map(attachmentDto));
+    });
+
+    /** Remove one attachment (row and stored file). Admin only. */
+    r.delete("/:id/attachments/:attachmentId", requireAdmin, async (req, res) => {
+      const item = await findItem(String(req.params.id));
+      const att = await prisma.attachment.findUnique({ where: { id: String(req.params.attachmentId) } });
+      if (!att || att.workItemId !== item.id) throw notFound("Attachment not found");
+      await prisma.attachment.delete({ where: { id: att.id } });
+      await deleteStoredFile(att.fileUrl);
+      await logActivity(prisma, { userId: req.user!.id, entityType: meta.entity, entityId: item.id, projectId: item.projectId, action: "updated", summary: `removed "${att.fileName}" from "${item.title}"` });
+      res.status(204).end();
+    });
+  }
 
   return r;
 }

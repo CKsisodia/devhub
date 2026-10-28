@@ -1,5 +1,5 @@
 /**
- * End-to-end sign-in flow against the real database (skipped when no DATABASE_URL / DB is reachable).
+ * End-to-end sign-in flow against a LOCAL database (skipped unless DATABASE_URL is localhost and reachable).
  * Creates its own throw-away user and removes it afterwards.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -11,8 +11,20 @@ import { createApp } from "../src/app.js";
 import { hashPassword } from "../src/lib/password.js";
 import { SESSION_COOKIE } from "../src/auth/session.js";
 
+/**
+ * Only ever runs against a LOCAL database. Prisma loads backend/.env on import, so DATABASE_URL may be the
+ * production (Neon) URL even when nothing is exported in the shell; never write test data there.
+ */
+function isLocalDb(url: string | undefined) {
+  try {
+    return Boolean(url) && ["localhost", "127.0.0.1", "::1", "[::1]"].includes(new URL(url!).hostname);
+  } catch {
+    return false;
+  }
+}
+
 async function dbAvailable() {
-  if (!process.env.DATABASE_URL) return false;
+  if (!isLocalDb(process.env.DATABASE_URL)) return false;
   try {
     await prisma.$queryRaw`SELECT 1`;
     return true;

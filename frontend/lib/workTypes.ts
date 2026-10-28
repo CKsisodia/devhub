@@ -13,6 +13,8 @@ export interface WorkTypeConfig {
   icon: LucideIcon;
   subtitle: string;
   extras: ExtraField[];
+  /** Attachments, links and the AI "Rephrase" button for notes (Tasks only for now). */
+  taskExtras: boolean;
   emptyTitle: string;
   emptyText: string;
   aiPlaceholder: string;
@@ -33,6 +35,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     icon: ListChecks,
     subtitle: "What the team is working on. Anyone can update a task’s status.",
     extras: [],
+    taskExtras: true,
     emptyTitle: "No tasks yet.",
     emptyText: "Add a task by hand or ask the AI to draft some.",
     aiPlaceholder: "Ask AI to add or update tasks… e.g. “Add 3 tasks for Login Redesign”",
@@ -47,6 +50,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     icon: Milestone,
     subtitle: "Where we’re heading, by month or quarter.",
     extras: ["targetPeriod"],
+    taskExtras: false,
     emptyTitle: "The roadmap is empty.",
     emptyText: "Add an initiative with a target month or quarter.",
     aiPlaceholder: "Ask AI to plan roadmap items… e.g. “Add 2 roadmap items for Design System v2 in Q1”",
@@ -61,6 +65,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     icon: Microscope,
     subtitle: "Time-boxed research: a goal, an end date and what we found.",
     extras: ["goal", "timeboxEnd", "findings"],
+    taskExtras: false,
     emptyTitle: "No research items yet.",
     emptyText: "Add a question to research, with a goal and a time box.",
     aiPlaceholder: "Ask AI to draft research items… e.g. “Add 2 R&D items about signals, 3 weeks”",
@@ -75,6 +80,7 @@ export const WORK: Record<WorkType, WorkTypeConfig> = {
     icon: FlaskConical,
     subtitle: "Proofs of concept: goal, time box, findings and the outcome.",
     extras: ["goal", "timeboxEnd", "findings", "outcome"],
+    taskExtras: false,
     emptyTitle: "No POCs yet.",
     emptyText: "Add a proof of concept with a goal and a time box.",
     aiPlaceholder: "Ask AI to draft POCs… e.g. “Add 1 POC for view transitions, 2 weeks”",

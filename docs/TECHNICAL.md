@@ -246,6 +246,8 @@ erDiagram
   docs |o--o{ docs : "parent of"
   users ||--o{ docs : "created or updated"
   docs |o--o{ attachments : "has"
+  work_items |o--o{ attachments : "has (Tasks)"
+  work_items ||--o{ work_item_links : "has (Tasks)"
   users ||--o{ attachments : "uploaded"
   users ||--o{ activity_logs : "did"
 
@@ -329,9 +331,19 @@ erDiagram
   attachments {
     uuid id PK
     uuid doc_id FK
+    uuid work_item_id FK "Tasks only"
     text file_url
     text file_name
+    text mime_type
+    int size_bytes
     uuid uploaded_by FK
+  }
+  work_item_links {
+    uuid id PK
+    uuid work_item_id FK
+    text url
+    text label
+    int position
   }
   activity_logs {
     uuid id PK
@@ -357,7 +369,8 @@ erDiagram
 | `work_items` | Tasks, Roadmap, R&D, POC | `type` decides the section. Roadmap: `target_period` (`2026-11` or `2026-Q4`). R&D: `goal`, `timebox_end`, `findings`. POC: the same plus `outcome` (`ADOPT`, `DROP`, `NEEDS_MORE_WORK`). Indexed on `(type, status)` and `project_id`. |
 | `learning_items` | Links and internal posts | `url` null means an internal post with a Markdown `body`. `tags` is a Postgres text array. |
 | `docs` | Documentation pages | `project_id` null is the General space. `parent_id` allows one level of nesting (checked in the API). `content` is Markdown, including `mermaid` and `chart` code blocks. |
-| `attachments` | Uploaded images | `file_url` is a Vercel Blob URL or `/api/uploads/files/<uuid>.<ext>` for local disk. |
+| `attachments` | Uploaded files: doc images, and Task attachments (`work_item_id` set) | `file_url` is a Vercel Blob URL or `/api/uploads/files/<uuid>.<ext>` for local disk. `mime_type` and `size_bytes` are set for Task attachments. Cascade-deleted with the work item (the stored file is removed by the API on delete). |
+| `work_item_links` | Links on a Task | `url` is http(s) only; `label` optional; ordered by `position`. Cascade-deleted with the work item. |
 | `activity_logs` | Audit trail and dashboard activity | Every create, update and delete, with `changes` as JSON. `entity_type`: `task`, `roadmap`, `rnd`, `poc`, `doc`, `project`, `learning`, `user`. |
 
 **Migrations** (`backend/prisma/migrations/`, applied in order):
@@ -485,8 +498,13 @@ All paths are under `/api` on the backend and are reached through the frontend's
 | POST | `/api/<s>/bulk` | Admin | `{ creates, updates }` in one transaction (AI confirm step) |
 | PATCH | `/api/<s>/:id/status` | **Signed in (admin or viewer)** | `{ status }`: `TODO`, `IN_PROGRESS`, `DONE`, `HOLD`, `REJECT` |
 | PATCH | `/api/<s>/:id` | Admin | Edit any field of that section |
-| DELETE | `/api/<s>/:id` | Admin | Delete (204) |
+| DELETE | `/api/<s>/:id` | Admin | Delete (204); also removes stored Task attachment files |
+| POST | `/api/tasks/:id/attachments` | Admin | **Tasks only.** Multipart field `files` (up to 10 per request, each max `UPLOAD_MAX_BYTES`): images, PDF, TXT, MD, CSV, JSON, ZIP, DOC(X), XLS(X), PPT(X). All files are checked before any is stored. Returns the updated item |
+| DELETE | `/api/tasks/:id/attachments/:attachmentId` | Admin | **Tasks only.** Remove one attachment and its stored file (204) |
 | POST | `/api/ai/draft` | Admin | `{ prompt, type }` → validated drafts (creates and updates); never writes |
+| POST | `/api/ai/rephrase` | Admin | `{ text, title? }` → `{ text, source, model }`: Task notes rewritten to be readable and professional (summary + bullets, same facts). Never writes; the UI shows it to accept ("Replace notes") or discard |
+
+Tasks also accept `links: [{ url, label? }]` (max 25, http/https only) on POST and PATCH; on PATCH the list replaces the existing links. Other sections reject `links` with 400. Every item in the API has `attachments` and `links` arrays (empty outside Tasks). Everyone signed in can see and open them; only admins can change them.
 
 ### 6.4 Projects, learnings, docs and uploads
 
@@ -507,7 +525,7 @@ All paths are under `/api` on the backend and are reached through the frontend's
 | GET | `/api/docs/:id` | Signed in | Page with content |
 | POST, PATCH, DELETE | `/api/docs`, `/api/docs/:id` | Admin | Create, edit, delete (sub-pages are deleted with the parent) |
 | POST | `/api/uploads` | Admin | Multipart field `file` (PNG, JPG, SVG, GIF, WEBP; max `UPLOAD_MAX_BYTES`), optional `docId` |
-| GET | `/api/uploads/files/:name` | Signed in | Local-disk files only, served with a locked-down CSP |
+| GET | `/api/uploads/files/:name` | Signed in | Serves Blob or local-disk files with a locked-down CSP; non-images are sent as downloads (`Content-Disposition: attachment`) |
 
 Frontend redirects (not API): `/backlog` → `/tasks`, `/learning` → `/learnings`, `/learning/:id` → `/learnings/:id`.
 
@@ -747,13 +765,16 @@ features on real data. Rules, so **no data is lost**:
   then `backend/.env`) points at `localhost`, `127.0.0.1` or `::1`. `prisma/seed.ts` has the same check. Override only
   with `ALLOW_REMOTE_DB_DESTRUCTIVE=1` (never against Neon). `npm run db:guard` shows which database you're on.
   Calling `npx prisma migrate dev/reset` directly bypasses the npm guard, so always use the npm scripts.
-- **Backups.** `npm run db:backup` writes a read-only, consistent JSON snapshot of every table to
+- **Backups.** `npm run db:backup` writes a read-only, consistent JSON snapshot of every table in the `public`
+  schema (raw SQL, so it also works while a migration is still pending) to
   `backend/backups/db-backup-<timestamp>.json` (gitignored, mode 600; it contains password hashes and encrypted
   TOTP secrets). Take one before any risky work. Neon branches / point-in-time restore are a second safety net.
 - **Same `TOTP_ENCRYPTION_KEY` as production.** Locally set `TOTP_ENCRYPTION_KEY` to the Render value; otherwise
   authenticator codes can't be decrypted and anyone who (re-)enrols locally gets a secret production can't read.
-- **Tests.** `npm test` only uses a DB when `DATABASE_URL` is exported in the shell (the auth-flow test creates and
-  deletes its own user). Don't export the Neon URL when running tests.
+- **Tests.** Prisma loads `backend/.env` by itself, so unsetting `DATABASE_URL` in the shell is **not** enough. The
+  DB-backed auth-flow test therefore only runs when `DATABASE_URL` points at `localhost`/`127.0.0.1`/`::1` (it is
+  skipped otherwise, e.g. when `.env` points at Neon). To run it:
+  `DATABASE_URL=postgresql://devhub:devhub@localhost:5433/devhub npm test`. It creates and deletes its own user.
 
 Workflow for a new feature that changes the schema:
 

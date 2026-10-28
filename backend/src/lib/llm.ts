@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { HttpError } from "./errors.js";
+import { buildRephraseMessages, mockRephrase, parseRephraseResponse, RephraseParseError } from "./rephrase.js";
 import { buildMessages, buildRepairMessage, DraftParseError, mockLlmReply, parseDraftResponse, type ChatMessage, type DraftContext, type DraftResult } from "./draft.js";
 
 export type DraftSource = "llm" | "mock";
@@ -125,4 +126,49 @@ export async function draftWorkItems(prompt: string, ctx: DraftContext): Promise
   const ms = Date.now() - started;
   console.log(`[ai] ${ctx.type} draft by ${config.llm.model} in ${ms} ms: ${result.creates.length} creates, ${result.updates.length} updates`);
   return { ...result, source: "llm", model: config.llm.model, ms };
+}
+
+/** Rewords the shared "draft items" error texts from callChatCompletions for the rephrase action. */
+function forRephrase(e: unknown): unknown {
+  if (!(e instanceof HttpError)) return e;
+  const msg = e.message
+    .replace(/^Couldn't draft items: /, "Couldn't rephrase the notes: ")
+    .replace(/ Try again or add an item manually\.$/, " Try again.")
+    .replace(/Try a shorter request, or add items manually\./, "Try shorter notes.")
+    .replace(/ Try again or add items manually\.$/, " Try again.");
+  return new HttpError(e.status, msg, e.details);
+}
+
+/** AI "Rephrase": returns a professional, well-structured rewrite of task notes. Never writes to the database. */
+export async function rephraseNotes(text: string, title?: string): Promise<{ text: string; source: DraftSource; model?: string; ms: number }> {
+  const mode = llmMode();
+  if (mode === "disabled") {
+    throw new HttpError(503, "AI isn't configured. Set LLM_BASE_URL / LLM_MODEL (and LLM_API_KEY for hosted providers) on the backend.");
+  }
+  const started = Date.now();
+  if (mode === "mock") return { text: mockRephrase(text), source: "mock", ms: Date.now() - started };
+
+  const messages = buildRephraseMessages(text, title);
+  try {
+    let reply = await callChatCompletions(messages);
+    let out: string;
+    try {
+      out = parseRephraseResponse(reply);
+    } catch (e) {
+      if (!(e instanceof RephraseParseError)) throw e;
+      console.warn(`[ai] invalid rephrase output (${e.message}); retrying once`);
+      reply = await callChatCompletions([...messages, { role: "assistant", content: reply.slice(0, 4000) }, { role: "user", content: 'That wasn\'t the expected format. Answer with the JSON object only: {"text": "<rewritten notes>"}.' }]);
+      try {
+        out = parseRephraseResponse(reply);
+      } catch (e2) {
+        if (e2 instanceof RephraseParseError) throw new HttpError(502, "Couldn't rephrase the notes: the AI answer wasn't in the expected format. Try again.");
+        throw e2;
+      }
+    }
+    const ms = Date.now() - started;
+    console.log(`[ai] rephrase by ${config.llm.model} in ${ms} ms (${text.length} -> ${out.length} chars)`);
+    return { text: out, source: "llm", model: config.llm.model, ms };
+  } catch (e) {
+    throw forRephrase(e);
+  }
 }

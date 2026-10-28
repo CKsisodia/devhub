@@ -7,7 +7,12 @@ export const toDate = (s: string | null | undefined) => (s === undefined ? undef
 export const workItemInclude = {
   project: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
+  attachments: { select: { id: true, fileName: true, fileUrl: true, mimeType: true, sizeBytes: true, createdAt: true }, orderBy: { createdAt: "asc" } },
+  links: { select: { id: true, url: true, label: true }, orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
 } satisfies Prisma.WorkItemInclude;
+
+export type AttachmentRow = { id: string; fileName: string; fileUrl: string; mimeType: string | null; sizeBytes: number | null; createdAt: Date };
+export const attachmentDto = (a: AttachmentRow) => ({ id: a.id, fileName: a.fileName, url: a.fileUrl, mimeType: a.mimeType, sizeBytes: a.sizeBytes, createdAt: a.createdAt.toISOString() });
 
 export type WorkItemWithRefs = Prisma.WorkItemGetPayload<{ include: typeof workItemInclude }>;
 
@@ -27,6 +32,8 @@ export function workItemDto(w: WorkItemWithRefs) {
     findings: w.findings,
     outcome: w.outcome,
     createdBy: w.createdBy,
+    attachments: w.attachments.map(attachmentDto),
+    links: w.links,
     createdAt: w.createdAt.toISOString(),
     updatedAt: w.updatedAt.toISOString(),
   };
