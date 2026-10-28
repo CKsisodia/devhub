@@ -112,9 +112,12 @@ To stop: `Ctrl+C` in both terminals, then `docker compose down` (add `-v` to del
 | backend   | `npm run dev`         | API in watch mode (tsx) on `PORT` (4000) |
 | backend   | `npm run build` / `npm start` | Compile to `dist/` / run the compiled server |
 | backend   | `npm run db:deploy`   | Apply migrations (`prisma migrate deploy`) |
-| backend   | `npm run db:migrate`  | Create a new migration after editing `schema.prisma` (dev) |
-| backend   | `npm run db:seed`     | **Wipes** app tables and loads the fake example data |
-| backend   | `npm run db:reset`    | Drop, re-migrate and re-seed the database |
+| backend   | `npm run db:migrate`  | Create a new migration after editing `schema.prisma` (dev; **local DB only**, guarded) |
+| backend   | `npm run db:seed`     | **Wipes** app tables and loads the fake example data (**local DB only**, guarded) |
+| backend   | `npm run db:reset`    | Drop, re-migrate and re-seed the database (**local DB only**, guarded) |
+| backend   | `npm run db:backup`   | Read-only JSON backup of every table to `backend/backups/` (gitignored) |
+| backend   | `npm run db:migrate:safe` | `db:backup`, then `prisma migrate deploy` (use this for Neon) |
+| backend   | `npm run db:guard`    | Check whether `DATABASE_URL` is local (what the guard allows) |
 | backend   | `npm run create-admin -- --email X --name Y` | Create the single production admin (no demo data; password prompted or from `ADMIN_PASSWORD`; refuses if an admin exists) |
 | backend   | `npm test`            | Permission, password/TOTP and AI-draft tests. The sign-in flow test uses the DB in `DATABASE_URL` (creates and removes its own user) and is skipped when no DB is reachable |
 | both      | `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
@@ -309,6 +312,34 @@ flowchart LR
 
 Each project has its own doc space, plus a team-wide **General** space. Pages nest one level deep
 (parent → child), and this is enforced by the API.
+
+## Local dev against production DB
+
+You can point the local backend at the production Neon database (`DATABASE_URL` in `backend/.env`) to build
+features on real data. Rules, so **no data is lost**:
+
+- **Guarded commands.** `npm run db:migrate`, `db:reset`, `db:seed` and the Prisma seed (`prisma db seed`, also run by
+  `migrate reset`) first run `scripts/guard-db.mjs`. It exits with an error unless `DATABASE_URL` (environment first,
+  then `backend/.env`) points at `localhost`, `127.0.0.1` or `::1`. `prisma/seed.ts` has the same check. Override only
+  with `ALLOW_REMOTE_DB_DESTRUCTIVE=1` (never against Neon). `npm run db:guard` shows which database you're on.
+  Calling `npx prisma migrate dev/reset` directly bypasses the npm guard, so always use the npm scripts.
+- **Backups.** `npm run db:backup` writes a read-only, consistent JSON snapshot of every table to
+  `backend/backups/db-backup-<timestamp>.json` (gitignored, mode 600; it contains password hashes and encrypted
+  TOTP secrets). Take one before any risky work. Neon branches / point-in-time restore are a second safety net.
+- **Same `TOTP_ENCRYPTION_KEY` as production.** Locally set `TOTP_ENCRYPTION_KEY` to the Render value; otherwise
+  authenticator codes can't be decrypted and anyone who (re-)enrols locally gets a secret production can't read.
+- **Tests.** `npm test` only uses a DB when `DATABASE_URL` is exported in the shell (the auth-flow test creates and
+  deletes its own user). Don't export the Neon URL when running tests.
+
+Workflow for a new feature that changes the schema:
+
+1. Edit `prisma/schema.prisma`, then create the migration against the **local Docker DB**:
+   `DATABASE_URL=postgresql://devhub:devhub@localhost:5433/devhub npm run db:migrate -- --name short_name`.
+2. Review the SQL: **additive only** (new tables, new nullable columns or columns with defaults, new indexes, new
+   enum values via the new-enum pattern). No `DROP`, no renames/type changes that lose data, no `NOT NULL` without a default.
+3. Commit the migration, then apply it to Neon with `npm run db:migrate:safe` (runs `db:backup`, then
+   `prisma migrate deploy`, which only applies committed migrations and never resets). Render's pre-deploy
+   `prisma migrate deploy` is a no-op afterwards.
 
 ## Deployment notes
 

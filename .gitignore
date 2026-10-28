@@ -23,3 +23,6 @@ backend/uploads/
 npm-debug.log*
 coverage/
 .vercel
+
+# Database backups (contain real data: password hashes, encrypted TOTP secrets)
+backend/backups/

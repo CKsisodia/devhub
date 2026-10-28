@@ -17,7 +17,7 @@
 5. Authentication and permissions
 6. API reference
 7. Environment variables (incl. 7.3 AI drafting with Ollama)
-8. Local development on macOS
+8. Local development on macOS (incl. 8.11 local dev against production DB)
 9. Deployment (production)
 10. Accessing database data
 11. Maintenance
@@ -709,7 +709,8 @@ SQL
 | backend | `npm run typecheck` | `tsc --noEmit` |
 | backend | `npm test` | Vitest: `permissions`, `auth-unit`, `draft` (no DB) and `auth-flow` (uses `DATABASE_URL`, creates and removes its own user, skipped if no DB is reachable) |
 | backend | `npm run build` / `npm start` | Compile to `dist/` / run the compiled server |
-| backend | `npm run db:reset` | Drop, re-migrate and re-seed the local database |
+| backend | `npm run db:reset` | Drop, re-migrate and re-seed the local database (guarded: local DB only) |
+| backend | `npm run db:backup` / `npm run db:migrate:safe` | JSON backup to `backend/backups/` / backup + `prisma migrate deploy` (see 8.11) |
 | frontend | `npm run lint` | ESLint (eslint-config-next) |
 | frontend | `npm run typecheck` | `next typegen && tsc --noEmit` |
 | frontend | `npm run build` / `npm start` | Production build / serve on port 3000 |
@@ -735,6 +736,34 @@ At v1.4, backend lint, type-check and all 160 tests (4 files) pass, and frontend
 | AI prompt says *"The local AI server … isn't reachable"* | Ollama isn't running. `brew services start ollama` (or `ollama serve`); check `curl localhost:11434/api/version` |
 | AI prompt says *"model … isn't available"* | `ollama pull qwen2.5:7b` (or the model in `LLM_MODEL`) |
 | AI prompt times out | First draft loads the model (~10–20 s extra). Free RAM, raise `LLM_TIMEOUT_MS`, or use `qwen2.5:3b` |
+
+### 8.11 Local dev against production DB
+
+You can point the local backend at the production Neon database (`DATABASE_URL` in `backend/.env`) to build
+features on real data. Rules, so **no data is lost**:
+
+- **Guarded commands.** `npm run db:migrate`, `db:reset`, `db:seed` and the Prisma seed (`prisma db seed`, also run by
+  `migrate reset`) first run `scripts/guard-db.mjs`. It exits with an error unless `DATABASE_URL` (environment first,
+  then `backend/.env`) points at `localhost`, `127.0.0.1` or `::1`. `prisma/seed.ts` has the same check. Override only
+  with `ALLOW_REMOTE_DB_DESTRUCTIVE=1` (never against Neon). `npm run db:guard` shows which database you're on.
+  Calling `npx prisma migrate dev/reset` directly bypasses the npm guard, so always use the npm scripts.
+- **Backups.** `npm run db:backup` writes a read-only, consistent JSON snapshot of every table to
+  `backend/backups/db-backup-<timestamp>.json` (gitignored, mode 600; it contains password hashes and encrypted
+  TOTP secrets). Take one before any risky work. Neon branches / point-in-time restore are a second safety net.
+- **Same `TOTP_ENCRYPTION_KEY` as production.** Locally set `TOTP_ENCRYPTION_KEY` to the Render value; otherwise
+  authenticator codes can't be decrypted and anyone who (re-)enrols locally gets a secret production can't read.
+- **Tests.** `npm test` only uses a DB when `DATABASE_URL` is exported in the shell (the auth-flow test creates and
+  deletes its own user). Don't export the Neon URL when running tests.
+
+Workflow for a new feature that changes the schema:
+
+1. Edit `prisma/schema.prisma`, then create the migration against the **local Docker DB**:
+   `DATABASE_URL=postgresql://devhub:devhub@localhost:5433/devhub npm run db:migrate -- --name short_name`.
+2. Review the SQL: **additive only** (new tables, new nullable columns or columns with defaults, new indexes, new
+   enum values via the new-enum pattern). No `DROP`, no renames/type changes that lose data, no `NOT NULL` without a default.
+3. Commit the migration, then apply it to Neon with `npm run db:migrate:safe` (runs `db:backup`, then
+   `prisma migrate deploy`, which only applies committed migrations and never resets). Render's pre-deploy
+   `prisma migrate deploy` is a no-op afterwards.
 
 ## 9. Deployment (production)
 
@@ -1069,7 +1098,7 @@ Do not edit `users.password_hash`, `users.totp_secret_enc`, `users.totp_last_ste
 2. `cd backend && npm run db:migrate -- --name short_description`. This runs `prisma migrate dev`: it creates `prisma/migrations/<timestamp>_short_description/migration.sql`, applies it to the local database and regenerates the client.
 3. Review the SQL. For renames or type changes, edit it so existing data is kept (see `20261013090000_work_items` for an in-place rename and an enum conversion). That migration avoids `ALTER TYPE ... ADD VALUE` inside a transaction by creating a new enum and converting the column; follow the same pattern.
 4. Update zod schemas (`lib/schemas.ts`), DTOs (`lib/dto.ts`), frontend types (`lib/types.ts`) and the seed if needed. Run lint, type-check and tests.
-5. Commit the migration folder. In production `npx prisma migrate deploy` (the Render pre-deploy command) applies it. Create a Neon branch first as a restore point for anything destructive.
+5. Commit the migration folder. Apply it to Neon with `npm run db:migrate:safe` (backup, then `prisma migrate deploy`; see 8.11; additive migrations only). Otherwise `npx prisma migrate deploy` (the Render pre-deploy command) applies it. Create a Neon branch first as a restore point for anything destructive.
 
 ### 11.2 Adding a new work section (WorkItem type pattern)
 

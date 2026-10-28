@@ -14,15 +14,18 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "db:migrate": "prisma migrate dev",
+    "db:guard": "node scripts/guard-db.mjs",
+    "db:migrate": "node scripts/guard-db.mjs migrate-dev && prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed",
-    "db:reset": "prisma migrate reset --force",
+    "db:backup": "tsx --env-file-if-exists=.env src/scripts/backup-db.ts",
+    "db:migrate:safe": "npm run db:backup && prisma migrate deploy",
+    "db:seed": "node scripts/guard-db.mjs seed && prisma db seed",
+    "db:reset": "node scripts/guard-db.mjs migrate-reset && prisma migrate reset --force",
     "create-admin": "tsx --env-file-if-exists=.env src/scripts/create-admin.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "node scripts/guard-db.mjs seed && tsx prisma/seed.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",

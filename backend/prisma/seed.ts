@@ -7,6 +7,23 @@ import { hashPassword } from "../src/lib/password.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+// Safety guard: this script WIPES all app tables, so it only runs against a local database.
+// (Same rule as scripts/guard-db.mjs; override only with ALLOW_REMOTE_DB_DESTRUCTIVE=1.)
+{
+  const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+  let host = "";
+  try {
+    host = new URL(process.env.DATABASE_URL ?? "").hostname.toLowerCase();
+  } catch {
+    host = "";
+  }
+  if (!LOCAL_HOSTS.has(host) && process.env.ALLOW_REMOTE_DB_DESTRUCTIVE !== "1") {
+    console.error(`[seed] BLOCKED: DATABASE_URL points to a non-local host (${host || "unset/unparseable"}).`);
+    console.error("[seed] The seed wipes all app tables. Override only with ALLOW_REMOTE_DB_DESTRUCTIVE=1.");
+    process.exit(1);
+  }
+}
+
 const prisma = new PrismaClient();
 
 const day = (offset: number) => {
